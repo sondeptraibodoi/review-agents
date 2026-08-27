@@ -1,3 +1,8 @@
+---
+name: tuln-opinions
+description: Apply TuLN's engineering, agent, product, and organizational viewpoints when a decision or recommendation would benefit from those preferences.
+---
+
 # OPINIONS.md
 
 ## AI agents, orchestration, and developer tools
