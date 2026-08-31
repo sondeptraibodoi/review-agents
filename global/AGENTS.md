@@ -18,6 +18,11 @@ These are common instructions for TuLN's agents across all scenarios.
 - Apply that same high standard to engineering excellence: lint, test failures, and test flakiness.
 - If you see one, fix it.
 
+## Resource-safe builds
+
+- Finish coding and relevant tests or E2E before running the production build; do not rebuild after every small edit.
+- On an 8 GB WSL2 environment, `nx run-many` is allowed, but run one build task at a time with `--parallel=1` and limit Node.js with `NODE_OPTIONS=--max-old-space-size=4096`.
+
 ## TuLN's Opinions
 
 When a task would benefit from TuLN's viewpoints, load the installed `tuln-opinions` skill.
@@ -28,14 +33,8 @@ Before using Python or managing Python dependencies, load the installed `python-
 
 ## Lavish visual planning and review
 
-Before producing a complex plan, comparison, architecture diagram, UI proposal, visual report, or another artifact that is easier to review visually than as prose, load the installed `lavish` skill.
-
-Do not load `lavish` for a short factual answer, a small code edit, or a simple explanation that is clearer as plain text.
+Load the installed `lavish` skill for complex plans or visual artifacts that benefit from visual review, but not for factual answers, simple explanations, or small code edits.
 
 ## Browser E2E and Chrome debugging
 
-For frontend, browser, UI, or end-to-end testing tasks that require a real browser, load the installed `chrome-devtools-axi` skill.
-
-Use Chrome DevTools AXI to reproduce the end-user flow, inspect the rendered UI, review browser console errors and failed network requests, test relevant viewport sizes, and capture screenshots when visual evidence matters.
-
-Do not load `chrome-devtools-axi` when a simple HTTP request or static source inspection fully answers the task.
+Load the installed `chrome-devtools-axi` skill for frontend, UI, or E2E work requiring a real browser to reproduce user flows and inspect the UI, console, network, viewports, or screenshots; skip it when HTTP or static source inspection is sufficient.
