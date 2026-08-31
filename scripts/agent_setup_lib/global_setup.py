@@ -13,6 +13,7 @@ from .common import (
     LinkSpec,
     PlannedLink,
     Reporter,
+    SKILL_SOURCES,
     SetupError,
     StateStore,
     SUPPORTED_AGENTS,
@@ -604,10 +605,14 @@ def apply_init(
 def plan_unlink(
     state: dict[str, Any],
     agents: Sequence[str],
+    *,
+    destination_filter: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     selected = set(agents)
     plans: list[dict[str, Any]] = []
     for destination_key, record in sorted(state["links"].items()):
+        if destination_filter is not None and destination_key not in destination_filter:
+            continue
         current_owners = set(record["owners"])
         removed = current_owners & selected
         if not removed:
@@ -705,6 +710,27 @@ def plan_unlink(
     return plans
 
 
+def legacy_codex_skill_destinations(home: Path) -> set[str]:
+    return {
+        os.fspath(home / ".codex/skills" / skill_name / "SKILL.md")
+        for skill_name in SKILL_SOURCES
+    }
+
+
+def plan_legacy_codex_skill_migration(
+    state: dict[str, Any],
+    home: Path,
+    agents: Sequence[str],
+) -> list[dict[str, Any]]:
+    if "codex" not in agents:
+        return []
+    return plan_unlink(
+        state,
+        ("codex",),
+        destination_filter=legacy_codex_skill_destinations(home),
+    )
+
+
 def emit_unlink_plan(reporter: Reporter, plans: Sequence[dict[str, Any]]) -> None:
     for plan in plans:
         action = plan["action"]
@@ -724,11 +750,14 @@ def apply_unlink(
     store: StateStore,
     agents: Sequence[str],
     reporter: Reporter,
+    *,
+    destination_filter: set[str] | None = None,
+    completion_code: str = "unlink_complete",
 ) -> None:
     with store.lock():
         recover_pending_transaction(store, reporter)
         state, state_existed = store.load(repository_root)
-        plans = plan_unlink(state, agents)
+        plans = plan_unlink(state, agents, destination_filter=destination_filter)
         emit_unlink_plan(reporter, plans)
         if any(plan["action"] == "conflict" for plan in plans):
             raise SetupError("unlink_conflict", "No changes were applied because unlink preflight found conflicts.")
@@ -776,4 +805,27 @@ def apply_unlink(
         except Exception:
             recover_pending_transaction(store, reporter)
             raise
-    reporter.emit("OK", "unlink_complete", f"Processed {len(plans)} managed destinations.")
+    reporter.emit("OK", completion_code, f"Processed {len(plans)} managed destinations.")
+
+
+def apply_legacy_codex_skill_migration(
+    repository_root: Path,
+    home: Path,
+    agents: Sequence[str],
+    store: StateStore,
+    reporter: Reporter,
+) -> None:
+    if "codex" not in agents:
+        return
+    state, _ = store.load(repository_root)
+    plans = plan_legacy_codex_skill_migration(state, home, agents)
+    if not plans:
+        return
+    apply_unlink(
+        repository_root,
+        store,
+        ("codex",),
+        reporter,
+        destination_filter=legacy_codex_skill_destinations(home),
+        completion_code="legacy_skill_migration_complete",
+    )

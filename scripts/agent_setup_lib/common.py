@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - unavailable on the supported target on
     fcntl = None
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.1"
 STATE_SCHEMA_VERSION = 1
 OUTPUT_SCHEMA_VERSION = 1
 SUPPORTED_AGENTS = ("codex", "claude", "gemini", "agy")
@@ -37,6 +37,12 @@ AGENT_COMMANDS = {
 SKILL_SOURCES = {
     "tuln-opinions": Path("skills/OPINIONS.md"),
     "python-tools": Path("skills/PYTHON.md"),
+    "lavish": Path("skills/LAVISH.md"),
+    "chrome-devtools-axi": Path("skills/CHROME_DEVTOOLS_AXI.md"),
+}
+ROUTED_SKILL_COMMANDS = {
+    "lavish": "lavish-axi",
+    "chrome-devtools-axi": "chrome-devtools-axi",
 }
 REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 MAX_PROPOSAL_BYTES = 64 * 1024
@@ -369,7 +375,7 @@ def instruction_destination(home: Path, agent: str) -> Path:
 
 def skill_destination(home: Path, agent: str, skill_name: str) -> Path:
     if agent == "codex":
-        return home / ".codex/skills" / skill_name / "SKILL.md"
+        return home / ".agents/skills" / skill_name / "SKILL.md"
     if agent == "claude":
         return home / ".claude/skills" / skill_name / "SKILL.md"
     if agent == "gemini":

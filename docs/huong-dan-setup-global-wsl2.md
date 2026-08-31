@@ -284,14 +284,53 @@ Các destination được tạo như sau:
 
 | Agent | Global instructions | Global personal skills |
 | --- | --- | --- |
-| Codex | `~/.codex/AGENTS.md` | `~/.codex/skills/<skill>/SKILL.md` |
+| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills/<skill>/SKILL.md` |
 | Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills/<skill>/SKILL.md` |
 | Gemini CLI | `~/.gemini/GEMINI.md` | `~/.gemini/skills/<skill>/SKILL.md` |
 | Antigravity CLI | `~/.gemini/GEMINI.md` | `~/.gemini/antigravity-cli/skills/<skill>/SKILL.md` |
 
 Nguồn global instruction duy nhất là `global/AGENTS.md`.
 
-Hai global skill tình huống là `skills/OPINIONS.md` và `skills/PYTHON.md`.
+Bốn global skill tình huống là:
+
+- `skills/OPINIONS.md` với tên `tuln-opinions`.
+
+- `skills/PYTHON.md` với tên `python-tools`.
+
+- `skills/LAVISH.md` với tên `lavish`.
+
+- `skills/CHROME_DEVTOOLS_AXI.md` với tên `chrome-devtools-axi`.
+
+`lavish` và `chrome-devtools-axi` là các route mỏng đến public CLI đã cài, không phải implementation thay thế.
+
+Global `AGENTS.md` yêu cầu agent tải `lavish` khi kế hoạch, so sánh, kiến trúc, UI proposal hoặc báo cáo cần review trực quan.
+
+Global `AGENTS.md` yêu cầu agent tải `chrome-devtools-axi` khi frontend, UI, browser debugging hoặc E2E cần Chrome thật.
+
+Chrome route yêu cầu kiểm tra luồng end-user, giao diện render, browser console, network, viewport liên quan và screenshot khi cần bằng chứng hình ảnh.
+
+Các route ưu tiên binary global đã cài và không tải lại package bằng `npx -y`.
+
+Sau khi apply, mở một phiên Codex/Agy mới để nạp lại danh sách skill.
+
+Kiểm tra symlink và CLI:
+
+```bash
+test -L ~/.agents/skills/lavish/SKILL.md
+test -L ~/.agents/skills/chrome-devtools-axi/SKILL.md
+test -L ~/.gemini/antigravity-cli/skills/lavish/SKILL.md
+test -L ~/.gemini/antigravity-cli/skills/chrome-devtools-axi/SKILL.md
+command -v lavish-axi
+command -v chrome-devtools-axi
+```
+
+Codex dùng `$HOME/.agents/skills` làm vị trí user-skill chuẩn.
+
+Các bản setup cũ từng dùng `~/.codex/skills`, nhưng Codex hiện không dùng đường dẫn đó cho personal skills.
+
+Khi chạy `init --agents codex --apply`, script tự chuyển các link cũ mà nó đang quản lý sang vị trí chuẩn theo transaction có recovery.
+
+Migration dừng nếu link cũ đã bị thay đổi bên ngoài, và không xóa file không thuộc ownership của script.
 
 Gemini CLI và Antigravity CLI dùng chung global `GEMINI.md`.
 
@@ -332,7 +371,9 @@ Chạy kiểm tra read-only:
 ./scripts/setup-global.sh doctor --agents codex,agy,claude
 ```
 
-Doctor kiểm tra source, frontmatter, symlink, state, agent CLI, public tools, xác thực `gh` và `glab`, Firstmate checkout, Chrome runtime và Codex `skill-creator`.
+Doctor kiểm tra source, frontmatter, symlink, state, agent CLI, public tools, routed CLI, xác thực `gh` và `glab`, Firstmate checkout, Chrome runtime và Codex `skill-creator`.
+
+Doctor trả lỗi nếu `lavish` đã được route nhưng thiếu `lavish-axi`, hoặc nếu `chrome-devtools-axi` đã được route nhưng thiếu CLI cùng tên.
 
 Doctor không cài package và không mở browser.
 

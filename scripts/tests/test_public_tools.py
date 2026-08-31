@@ -72,6 +72,28 @@ class BootstrapParsingTests(unittest.TestCase):
         self.assertEqual(result["version"], "tmux 3.2a")
         self.assertEqual(run.call_args.args[0], ["/usr/bin/tmux", "-V"])
 
+    def test_codex_version_allows_a_slow_cold_start(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["/home/test/.local/bin/codex", "--version"],
+            returncode=0,
+            stdout="codex-cli 0.150.1\n",
+            stderr="",
+        )
+        with mock.patch.object(
+            doctor_module.shutil,
+            "which",
+            return_value="/home/test/.local/bin/codex",
+        ), mock.patch.object(
+            doctor_module.subprocess,
+            "run",
+            return_value=completed,
+        ) as run:
+            result = doctor_module.command_version("codex")
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["version"], "codex-cli 0.150.1")
+        self.assertEqual(run.call_args.kwargs["timeout"], 15)
+
     def test_auth_diagnostic_redacts_token(self) -> None:
         completed = subprocess.CompletedProcess(
             args=["/usr/bin/glab", "auth", "status"],

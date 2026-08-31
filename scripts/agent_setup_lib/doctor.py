@@ -14,6 +14,7 @@ from typing import Any, Sequence
 from .auth_env import AuthEnvironment
 from .common import (
     AGENT_COMMANDS,
+    ROUTED_SKILL_COMMANDS,
     SKILL_SOURCES,
     Reporter,
     SetupError,
@@ -25,6 +26,11 @@ from .common import (
     validate_sources,
 )
 from .repositories import canonical_remote, git_value
+
+
+VERSION_COMMAND_TIMEOUT_SECONDS = 5
+AGENT_VERSION_COMMAND_TIMEOUT_SECONDS = 15
+AGENT_VERSION_COMMANDS = frozenset(AGENT_COMMANDS.values())
 
 
 def command_version(command: str) -> dict[str, Any]:
@@ -41,13 +47,18 @@ def command_version(command: str) -> dict[str, Any]:
     version_arguments = {
         "tmux": ("-V",),
     }.get(command, ("--version",))
+    timeout = (
+        AGENT_VERSION_COMMAND_TIMEOUT_SECONDS
+        if command in AGENT_VERSION_COMMANDS
+        else VERSION_COMMAND_TIMEOUT_SECONDS
+    )
     try:
         completed = subprocess.run(
             [executable, *version_arguments],
             check=False,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"status": "error", "command": command, "path": executable, "error": type(error).__name__}
@@ -223,9 +234,9 @@ def inspect_firstmate(home: Path) -> dict[str, Any]:
 
 def duplicate_skill_paths(home: Path, agents: Sequence[str]) -> list[str]:
     duplicates: set[str] = set()
-    if "codex" in agents or "gemini" in agents:
+    if "codex" in agents:
         for name in SKILL_SOURCES:
-            alternate = home / ".agents/skills" / name / "SKILL.md"
+            alternate = home / ".codex/skills" / name / "SKILL.md"
             if lexists(alternate):
                 duplicates.add(os.fspath(alternate))
     if "claude" in agents:
@@ -325,6 +336,19 @@ def doctor(
     )
     tools = {name: command_version(name) for name in tool_names}
     reporter.data["tools"] = tools
+    routed_tools: dict[str, dict[str, Any]] = {}
+    for skill_name, command in ROUTED_SKILL_COMMANDS.items():
+        result = tools[command]
+        routed_tools[skill_name] = result
+        available = result["status"] == "ok"
+        reporter.emit(
+            "OK" if available else "ERROR",
+            "routed_tool",
+            f"{skill_name}: {command} is {result['status']}.",
+        )
+        if not available:
+            healthy = False
+    reporter.data["routed_tools"] = routed_tools
     command_environment = auth_environment.command_environment() if auth_environment else None
     glab_auth = (
         command_gitlab_token_status(

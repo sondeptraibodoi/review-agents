@@ -1,414 +1,520 @@
 # Agent Advance Setup Tutorial
 
-Bộ công cụ này chuẩn hóa môi trường coding agent trên WSL2.
+Repository này cung cấp một bộ script Python standard library để chuẩn hóa môi trường coding agent trên WSL2.
 
-Nó hỗ trợ cài public toolchain, liên kết global instructions, liên kết global situational skills và tạo project memory có bước review trước khi ghi vào repository.
+Profile mặc định hiện tại là Codex và Agy, trong đó Agy là Antigravity CLI.
 
-Mục tiêu chính là dùng chung một nguồn cấu hình cho Codex, Claude Code, Gemini CLI và Antigravity CLI mà không ghi đè âm thầm setup cũ.
+Claude Code được hỗ trợ bởi implementation nhưng không nằm trong luồng setup mặc định.
 
-## Phạm vi
+Script ưu tiên tái sử dụng installer và package public chính chủ thay vì tự viết lại các tool upstream.
 
-Repository cung cấp các khả năng sau:
+## Kết quả mong đợi
 
-- Clone và bootstrap Firstmate từ upstream chính thức.
+Sau khi hoàn tất quick start, môi trường WSL2 có:
 
-- Cài các dependency user-level do Firstmate quản lý.
+- Node.js 22.19 trở lên từ NVM trong Linux home.
 
-- Cài `gnhf` từ package npm chính thức.
+- Git, tmux, GitHub CLI `gh` và GitLab CLI `glab`.
 
-- Kiểm tra hoặc tự cài các prerequisite WSL2 và từ chối dùng nhầm binary Windows dưới `/mnt/c`.
+- Firstmate cùng backend `tmux` và các dependency public của nó.
 
-- Tạo symlink global instructions và skills cho nhiều agent.
+- `gnhf` được cài riêng từ package npm chính thức.
 
-- Backup file global đã tồn tại trước khi thay bằng symlink.
+- Global instructions dùng chung cho Codex và Agy.
 
-- Kiểm tra setup bằng lệnh `doctor`.
+- Bốn global situational skills là `tuln-opinions`, `python-tools`, `lavish` và `chrome-devtools-axi`.
 
-- Phân tích project bằng Codex trong sandbox read-only và tạo proposal trước khi ghi `AGENTS.md`.
+- Xác thực GitHub và GitLab từ file `.env` local không được Git track.
 
-Script chỉ điều phối installer và repository public có sẵn.
+- Lệnh `doctor` để kiểm tra lại toàn bộ setup theo cách read-only.
 
-Script không chép hoặc viết lại source của các upstream tool.
+## Phạm vi tự động hóa
+
+Script có thể tự động:
+
+- Cài hoặc chọn Node.js 22.19 bằng NVM hiện có.
+
+- Cài `git` và `tmux` bằng apt khi còn thiếu.
+
+- Cài `gh` và `glab` vào `~/.local/bin` từ release chính thức.
+
+- Clone và bootstrap Firstmate từ `kunchenguid/firstmate`.
+
+- Cài các public AXI tools do Firstmate quản lý.
+
+- Cài `gnhf` riêng bằng npm.
+
+- Backup global instruction hoặc skill cũ trước khi tạo symlink.
+
+- Tạo project memory theo quy trình proposal rồi apply.
+
+Script không tự động:
+
+- Cài Codex CLI.
+
+- Đăng nhập tương tác vào tài khoản GitHub hoặc GitLab.
+
+- Tải Chrome browser dung lượng lớn.
+
+- Push source code lên GitHub hoặc GitLab.
+
+- Ghi proposal do model tạo vào project trước khi người dùng review.
 
 ## Môi trường mục tiêu
 
 - WSL2 hoặc Linux.
 
-- Python 3 từ Linux distribution.
+- Python 3 của Linux distribution.
+
+- Python standard library, không cần `pip install`.
+
+- NVM trong Linux home.
 
 - Node.js 22.19 trở lên.
 
-- npm cài trong WSL2.
+- npm Linux, không dùng npm hoặc Node từ `/mnt/c`.
 
-- Git và tmux.
+- Codex CLI và Agy nếu dùng profile mặc định.
 
-- GitHub CLI `gh` vì Firstmate yêu cầu.
-
-- GitLab CLI `glab` nếu làm việc với GitLab.
-
-- Codex CLI nếu dùng project memory generator.
-
-Không chạy script bằng Windows Python hoặc Windows Node thông qua `/mnt/c`.
-
-Kiểm tra nhanh:
-
-```bash
-command -v python3 node npm git tmux gh glab codex
-python3 --version
-node --version
-tmux -V
-```
-
-## Firstmate quản lý những tool nào
-
-Clone Firstmate chưa tự động cài dependency.
-
-Firstmate detect tool còn thiếu và chỉ cài những tool được truyền rõ ràng vào `fm-bootstrap.sh install`.
-
-Universal toolchain mà Firstmate khai báo gồm `node`, `git`, `gh`, `no-mistakes`, `gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `tasks-axi` và `quota-axi`.
-
-Backend `tmux` bổ sung `tmux` và `treehouse`.
-
-Với backend mặc định `tmux`, phạm vi được chia như sau:
-
-| Nhóm | Thành phần | Cách xử lý |
-| --- | --- | --- |
-| Firstmate user-level | `no-mistakes`, `gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `tasks-axi`, `quota-axi` | Giao cho bootstrap chính chủ của Firstmate |
-| Firstmate backend `tmux` | `treehouse` | Giao cho bootstrap chính chủ của Firstmate |
-| Prerequisite nền | `git`, `tmux` | `--install` dùng apt nếu còn thiếu |
-| Node.js | `node>=22.19`, `npm` | `--install` dùng NVM đã có trong Linux home |
-| Provider CLI | `gh`, `glab` | `--install` tải `.deb` mới nhất và cài vào `~/.local/bin` |
-| Generator | `codex` | Cài riêng và script chỉ kiểm tra |
-| Tool độc lập | `gnhf` | Script cài bằng `npm install -g gnhf` |
-| Skill có sẵn | Codex `skill-creator` | Doctor kiểm tra và không cài bản trùng tên |
-| Browser runtime | Chrome hoặc Chromium | Tùy chọn và không tự tải |
-
-Firstmate không bao gồm `gnhf` hoặc `glab` trong universal toolchain.
-
-Chrome DevTools AXI và Chrome browser là hai thành phần khác nhau.
-
-## Bắt đầu nhanh
-
-Mở WSL2 và vào repository:
+Mở Ubuntu WSL2 và vào repository:
 
 ```bash
 cd /mnt/u/Projects/agent_advance_setup_tutorial
 ```
 
-### 1. Xem kế hoạch cài public tools
+## Quick start cho Codex và Agy
+
+### 1. Cấu hình provider token
+
+Sao chép file mẫu nếu `.env` chưa tồn tại:
 
 ```bash
-./scripts/setup-global.sh tools
+cp .env.example .env
 ```
 
-Dry-run không cài package, không clone repository và không thay đổi filesystem.
-
-Nếu checkout Firstmate đã tồn tại, script chỉ chạy detect-only với network phase bị tắt.
-
-### 2. Tự động cài toàn bộ tool còn thiếu
-
-Lệnh được khuyến nghị cho một WSL2 mới:
-
-```bash
-./scripts/setup-global.sh tools --install
-```
-
-`--install` thực hiện các bước sau:
-
-1. Dùng NVM hiện có để cài và chọn Node.js 22.19 nếu Node đang thiếu hoặc quá cũ.
-
-2. Dùng apt để cài `git` hoặc `tmux` nếu còn thiếu.
-
-3. Tải `.deb` mới nhất của `gh` và `glab` từ release API chính thức, xác minh SHA-256 rồi cài binary vào `~/.local/bin`.
-
-4. Clone và bootstrap Firstmate.
-
-5. Cài `gnhf` nếu còn thiếu.
-
-Lệnh chỉ hỏi mật khẩu `sudo` khi phải cài `git` hoặc `tmux` bằng apt.
-
-Nếu script nâng cấp Node.js, nó đặt alias NVM mặc định thành Node.js 22.19 và dùng bản đó cho toàn bộ phần cài còn lại.
-
-Sau khi script kết thúc, chạy `nvm use 22.19` hoặc mở shell WSL mới để cập nhật PATH của shell cha hiện tại.
-
-Codex CLI, Chrome browser và bước xác thực tài khoản không được tự động hóa.
-
-### 3. Cài public tools khi prerequisite đã sẵn sàng
-
-```bash
-./scripts/setup-global.sh tools --apply
-```
-
-`--apply` thực hiện các bước sau:
-
-1. Kiểm tra prerequisite và Node.js major version.
-
-2. Clone `kunchenguid/firstmate` vào `~/agent-tools/firstmate` nếu chưa có.
-
-3. Xác minh origin, working tree và tracked upstream của Firstmate.
-
-4. Chạy Firstmate detect-only để lấy danh sách dependency còn thiếu.
-
-5. Gọi chính `bin/fm-bootstrap.sh install` cho nhóm tool Firstmate quản lý.
-
-6. Cài `gnhf` riêng bằng npm nếu còn thiếu.
-
-7. Chạy lại detect-only để xác nhận kết quả.
-
-Cả `--install` và `--apply` đều hỗ trợ checkout khác bên dưới Linux home:
-
-```bash
-./scripts/setup-global.sh tools \
-  --firstmate-dir ~/tools/firstmate \
-  --apply
-```
-
-Có thể bỏ qua `gnhf`:
-
-```bash
-./scripts/setup-global.sh tools --skip-gnhf --apply
-```
-
-Script không chạy login tương tác, nhưng có thể tự dùng token từ `.env`.
-
-### 4. Xác thực provider
-
-#### Token tự động từ `.env` trong repo
-
-Repository đã có file `.env` local và `.env.example` làm mẫu.
-
-`.env` đã nằm trong `.gitignore`, nên Git không track file này.
-
-Điền token và hostname thật vào `.env`:
+Điền credential vào `.env`:
 
 ```dotenv
-GH_TOKEN=github_pat_REPLACE_WITH_REAL_TOKEN
+GH_TOKEN=ghp_REPLACE_WITH_REAL_TOKEN
 GITLAB_TOKEN=glpat_REPLACE_WITH_REAL_TOKEN
-GITLAB_HOST=https://gitlab.company.com
+GITLAB_HOST=https://git.mattech.vn
 ```
 
-Không thêm dấu cách quanh dấu `=` và không đặt comment phía sau token.
+Với GitHub Personal Access Token classic, bộ scope tối thiểu cho GitHub CLI là `repo`, `read:org` và `gist`.
 
-Kiểm tra cả hai token:
+Scope GitLab phải tuân theo chính sách của GitLab công ty và các thao tác mà bạn thực sự sử dụng.
+
+Không đặt token trên command line, trong commit, log hoặc ảnh chụp màn hình.
+
+`.env` đã nằm trong `.gitignore`.
+
+Gitignore chỉ ngăn commit nhầm và không mã hóa file trên ổ đĩa.
+
+### 2. Xác thực token
 
 ```bash
 ./scripts/setup-global.sh auth
 ```
 
-Sau đó `tools --install`, `tools --apply` và `doctor` sẽ tự đọc `.env` trong repository root.
+Lệnh phải báo cả `gh: ok` và `glab: ok`.
 
-```bash
-./scripts/setup-global.sh tools --install
-./scripts/setup-global.sh doctor --agents codex,agy,claude
-```
+Script phân tích `.env` bằng Python và không dùng `source`, vì vậy nội dung file không được thực thi như shell code.
 
-Các lệnh mutating của `tools` xác minh token đã cấu hình trước khi cài hoặc bootstrap.
+Chỉ bốn key sau được chấp nhận:
 
-Script phân tích `.env` bằng Python và không dùng `source`, nên nội dung file không được thực thi như shell code.
+- `GH_TOKEN`
 
-Chỉ bốn key `GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN` và `GITLAB_HOST` được chấp nhận.
+- `GITHUB_TOKEN`
 
-Có thể chọn file khác bằng `--env-file`:
+- `GITLAB_TOKEN`
+
+- `GITLAB_HOST`
+
+Chỉ đặt một trong hai key `GH_TOKEN` hoặc `GITHUB_TOKEN`.
+
+Có thể chọn credential file khác bằng `--env-file`:
 
 ```bash
 ./scripts/setup-global.sh auth --env-file config/local-auth.env
 ```
 
-Không đưa `.env` vào log, ảnh chụp màn hình hoặc nội dung gửi cho agent.
+### 3. Cài public toolchain
 
-Gitignore chỉ ngăn commit nhầm và không mã hóa file trên ổ đĩa.
-
-#### GitHub cho Firstmate và các GitHub tool
-
-Chạy trong terminal WSL2:
+Xem kế hoạch mà không thay đổi filesystem:
 
 ```bash
-gh auth login --hostname github.com --git-protocol https --web
+./scripts/setup-global.sh tools
 ```
 
-Nếu trình duyệt không tự mở, sao chép mã một lần và mở URL mà `gh` hiển thị bằng trình duyệt Windows.
-
-Hoàn thành đăng nhập trên trang GitHub rồi kiểm tra:
+Cài toàn bộ prerequisite và public tool còn thiếu:
 
 ```bash
-gh auth status --hostname github.com
+./scripts/setup-global.sh tools --install
 ```
 
-Không dùng `gh auth status --show-token` khi chia sẻ log hoặc ảnh chụp màn hình.
+Lệnh `--install` thực hiện theo thứ tự:
 
-Đăng nhập `gh` không tự push source code lên GitHub.
+1. Xác thực các token đã cấu hình.
 
-Nó chỉ lưu thông tin xác thực để các lệnh `gh` hoặc tool dựa trên GitHub có thể chạy khi bạn chủ động gọi chúng.
+2. Kiểm tra WSL2, Python, Node, npm, Git, tmux, `gh`, `glab` và Codex.
 
-Muốn xóa đăng nhập GitHub khỏi WSL2:
+3. Kích hoạt hoặc cài Node.js 22.19 bằng NVM.
+
+4. Cài prerequisite nền còn thiếu.
+
+5. Clone và kiểm tra Firstmate checkout.
+
+6. Chạy Firstmate detect-only để lấy danh sách dependency còn thiếu.
+
+7. Gọi installer chính chủ của Firstmate cho đúng nhóm tool đó.
+
+8. Cài `gnhf` nếu còn thiếu.
+
+9. Chạy lại detect-only để xác minh kết quả.
+
+Nếu script vừa thay Node.js, mở shell WSL mới hoặc chạy:
 
 ```bash
-gh auth logout --hostname github.com
+nvm use 22.19
 ```
 
-#### GitLab công ty
-
-Thay `gitlab.company.com` bằng hostname GitLab thật của công ty rồi chạy:
-
-```bash
-glab auth login \
-  --hostname gitlab.company.com \
-  --git-protocol ssh \
-  --web
-```
-
-Nếu GitLab công ty hỗ trợ OAuth device flow nhưng WSL2 không mở được trình duyệt, dùng:
-
-```bash
-glab auth login \
-  --hostname gitlab.company.com \
-  --git-protocol ssh \
-  --device
-```
-
-Device flow yêu cầu GitLab 17.9 trở lên.
-
-Nếu công ty bắt buộc HTTPS cho Git, đổi `--git-protocol ssh` thành `--git-protocol https`.
-
-Kiểm tra trạng thái sau khi đăng nhập:
-
-```bash
-glab auth status --hostname gitlab.company.com
-```
-
-Muốn xóa đăng nhập GitLab khỏi WSL2:
-
-```bash
-glab auth logout --hostname gitlab.company.com
-```
-
-Không truyền token trực tiếp trên command line và không ghi token vào repository.
-
-Nếu chính sách công ty bắt buộc Personal Access Token, dùng tùy chọn `--stdin` và scope tối thiểu theo chính sách GitLab nội bộ.
-
-Tham khảo thêm tài liệu chính thức của [GitHub CLI](https://cli.github.com/manual/gh_auth_login) và [GitLab CLI](https://docs.gitlab.com/cli/auth/login/).
-
-Project công ty vẫn dùng GitLab remote, `glab`, Merge Request và GitLab CI.
-
-Không cần sửa hoặc fork Firstmate chỉ vì source code chính nằm trên GitLab.
-
-### 5. Setup global instructions và skills
+### 4. Áp dụng global instructions và skills
 
 Xem kế hoạch:
 
 ```bash
-./scripts/setup-global.sh init --agents codex,agy,claude
+./scripts/setup-global.sh init --agents codex,agy
 ```
 
-Áp dụng:
+Áp dụng setup:
 
 ```bash
-./scripts/setup-global.sh init --agents codex,agy,claude --apply
+./scripts/setup-global.sh init --agents codex,agy --apply
 ```
 
-Cú pháp tương thích dạng parameter cũng được hỗ trợ:
+Cú pháp parameter tương thích:
 
 ```bash
-./scripts/setup-global.sh --init=codex,agy,claude --apply
+./scripts/setup-global.sh --init=codex,agy --apply
 ```
 
-Agent hợp lệ gồm `codex`, `claude`, `gemini` và `agy`.
-
-Alias `antigravity` và `antigravity-cli` được chuẩn hóa thành `agy`.
-
-### 6. Kiểm tra kết quả
+### 5. Kiểm tra kết quả
 
 ```bash
-./scripts/setup-global.sh doctor --agents codex,agy,claude
+./scripts/setup-global.sh doctor --agents codex,agy
 ```
 
-Doctor kiểm tra source, frontmatter, symlink, state, agent CLI, public tools, xác thực provider, Firstmate checkout, Chrome runtime và Codex `skill-creator`.
+Một setup hoàn chỉnh phải có:
+
+- `authentication: gh: ok`
+
+- `authentication: glab: ok`
+
+- `agent: codex: ok`
+
+- `agent: agy: ok`
+
+- Tất cả global link ở trạng thái `managed-ok`.
+
+- `doctor_complete` với exit code `0`.
+
+Kiểm tra nhanh binary và phiên bản:
+
+```bash
+command -v python3 node npm git tmux gh glab codex agy
+python3 --version
+node --version
+tmux -V
+```
+
+## Tool inventory và ownership
+
+Firstmate universal toolchain khai báo các thành phần sau:
+
+- `node`
+
+- `git`
+
+- `gh`
+
+- `no-mistakes`
+
+- `gh-axi`
+
+- `chrome-devtools-axi`
+
+- `lavish-axi`
+
+- `tasks-axi`
+
+- `quota-axi`
+
+Backend `tmux` bổ sung `tmux` và `treehouse`.
+
+Phạm vi cài đặt được chia rõ như sau:
+
+| Nhóm | Thành phần | Owner cài đặt |
+| --- | --- | --- |
+| Firstmate user-level | `no-mistakes`, `gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `tasks-axi`, `quota-axi` | `fm-bootstrap.sh` của Firstmate |
+| Firstmate backend `tmux` | `treehouse` | `fm-bootstrap.sh` của Firstmate |
+| Prerequisite nền | `git`, `tmux` | Setup script qua apt khi thiếu |
+| Node.js | `node>=22.19`, `npm` | Setup script qua NVM |
+| Provider CLI | `gh`, `glab` | Setup script từ official release |
+| Tool độc lập | `gnhf` | Setup script qua npm |
+| Generator | `codex` | Cài riêng, script chỉ kiểm tra |
+| Browser runtime | Chrome hoặc Chromium | Cài hoặc cấu hình riêng |
+
+Firstmate không bao gồm `gnhf` hoặc `glab`.
+
+`chrome-devtools-axi` và Chrome browser là hai thành phần khác nhau.
+
+Codex `skill-creator` là system skill có sẵn và script không cài một bản trùng tên.
 
 ## Global file mapping
 
+Profile mặc định tạo các mapping sau:
+
 | Agent | Global instructions | Global situational skills |
 | --- | --- | --- |
-| Codex | `~/.codex/AGENTS.md` | `~/.codex/skills/<skill>/SKILL.md` |
-| Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills/<skill>/SKILL.md` |
-| Gemini CLI | `~/.gemini/GEMINI.md` | `~/.gemini/skills/<skill>/SKILL.md` |
-| Antigravity CLI | `~/.gemini/GEMINI.md` | `~/.gemini/antigravity-cli/skills/<skill>/SKILL.md` |
+| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills/<skill>/SKILL.md` |
+| Agy | `~/.gemini/GEMINI.md` | `~/.gemini/antigravity-cli/skills/<skill>/SKILL.md` |
 
 Nguồn global instruction duy nhất là [`global/AGENTS.md`](global/AGENTS.md).
 
 Các global situational skill hiện có:
 
-- [`skills/OPINIONS.md`](skills/OPINIONS.md)
+- [`skills/OPINIONS.md`](skills/OPINIONS.md), được publish thành skill `tuln-opinions`.
 
-- [`skills/PYTHON.md`](skills/PYTHON.md)
+- [`skills/PYTHON.md`](skills/PYTHON.md), được publish thành skill `python-tools`.
 
-Gemini CLI và Antigravity CLI dùng chung global `GEMINI.md` nhưng có skill directory riêng.
+- [`skills/LAVISH.md`](skills/LAVISH.md), được publish thành skill route `lavish`.
+
+- [`skills/CHROME_DEVTOOLS_AXI.md`](skills/CHROME_DEVTOOLS_AXI.md), được publish thành skill route `chrome-devtools-axi`.
+
+Hai AXI skill là route mỏng, không phải bản sao implementation của public tool.
+
+Route định nghĩa khi nào agent phải dùng tool, yêu cầu agent đọc hướng dẫn hiện hành từ CLI đã cài, và ngăn tải thêm một bản package bằng `npx -y` khi binary global đã có.
+
+`lavish` được kích hoạt cho kế hoạch phức tạp, so sánh, kiến trúc, UI proposal, báo cáo hoặc artifact cần review trực quan.
+
+`chrome-devtools-axi` được kích hoạt cho frontend, UI, browser debugging và E2E cần Chrome thật, bao gồm kiểm tra giao diện, console, network, viewport và screenshot.
+
+Sau khi thêm hoặc thay đổi global skill, hãy mở phiên Codex/Agy mới để agent nạp lại danh sách skill.
+
+Kiểm tra các route đã được publish:
+
+```bash
+test -L ~/.agents/skills/lavish/SKILL.md
+test -L ~/.agents/skills/chrome-devtools-axi/SKILL.md
+test -L ~/.gemini/antigravity-cli/skills/lavish/SKILL.md
+test -L ~/.gemini/antigravity-cli/skills/chrome-devtools-axi/SKILL.md
+```
+
+Codex dùng `$HOME/.agents/skills` làm vị trí user-skill chuẩn.
+
+Khi nâng cấp từ setup `0.3.0` trở xuống, `init --apply` tự tạo link chuẩn rồi gỡ các link Codex cũ dưới `~/.codex/skills` nếu chúng vẫn do script quản lý và chưa bị thay đổi bên ngoài.
+
+Nếu đường dẫn cũ từng chứa file hoặc symlink của người dùng, migration khôi phục backup đã xác minh thay vì xóa nội dung đó.
+
+Kiểm tra public CLI tương ứng:
+
+```bash
+command -v lavish-axi
+command -v chrome-devtools-axi
+lavish-axi --version
+chrome-devtools-axi --version
+```
+
+Implementation vẫn hỗ trợ các agent sau khi được yêu cầu rõ:
+
+- `codex`
+
+- `agy`
+
+- `gemini`
+
+- `claude`
+
+Alias `antigravity` và `antigravity-cli` được chuẩn hóa thành `agy`.
+
+Claude không nằm trong profile mặc định của hướng dẫn này.
 
 ## Backup, state và unlink
 
-Nếu instruction file đích đã tồn tại, script sao lưu trước khi tạo symlink.
+Nếu instruction file đích đã tồn tại, script tạo backup trước khi thay bằng symlink.
 
-Tên backup đầu tiên có dạng `AGENTS-bak.md`, `CLAUDE-bak.md` hoặc `GEMINI-bak.md`.
+Backup đầu tiên có dạng `AGENTS-bak.md`, `CLAUDE-bak.md` hoặc `GEMINI-bak.md`.
 
-Nếu tên backup đã tồn tại, script tạo tên có timestamp và không ghi đè backup cũ.
+Nếu tên backup đã tồn tại, script thêm timestamp và không ghi đè file cũ.
 
-Backup của skill cũ được giữ ngoài thư mục skill đang hoạt động để agent không phát hiện nhầm backup như một skill mới.
+Backup skill được đặt ngoài skill directory đang hoạt động để agent không phát hiện nhầm nó như một skill mới.
 
-State và recovery journal mặc định nằm tại:
+State và recovery journal nằm tại:
 
 ```text
 ~/.local/state/agent-advance-setup/
 ```
 
-Nếu link do script quản lý bị xóa, sửa bằng:
+Sửa một link quản lý đã bị xóa:
 
 ```bash
-./scripts/setup-global.sh init --agents codex --repair --apply
+./scripts/setup-global.sh init --agents codex,agy --repair --apply
 ```
 
-Gỡ setup bằng dry-run rồi apply:
+Xem kế hoạch gỡ:
 
 ```bash
-./scripts/setup-global.sh unlink --agents codex
-./scripts/setup-global.sh unlink --agents codex --apply
+./scripts/setup-global.sh unlink --agents codex,agy
 ```
 
-Nếu destination còn owner khác, `unlink` chỉ bỏ owner được chọn và giữ symlink dùng chung.
+Gỡ ownership và khôi phục backup khi có:
+
+```bash
+./scripts/setup-global.sh unlink --agents codex,agy --apply
+```
+
+Nếu một destination còn owner khác, script giữ symlink dùng chung.
+
+## GitLab công ty và Firstmate
+
+Project chính có thể tiếp tục dùng GitLab remote, `glab`, Merge Request và GitLab CI.
+
+GitLab hiện được cấu hình tại:
+
+```text
+https://git.mattech.vn
+```
+
+Firstmate vẫn được clone từ GitHub vì upstream chính thức nằm tại `github.com/kunchenguid/firstmate`.
+
+Không cần sửa, fork hoặc chuyển Firstmate sang GitLab chỉ vì project công ty dùng GitLab.
+
+Đăng nhập GitHub không làm phát sinh push source code.
+
+Code chỉ được push khi người dùng hoặc agent chủ động chạy một lệnh Git có thay đổi remote.
 
 ## Firstmate checkout safety
 
-Script chỉ chấp nhận origin canonical `github.com/kunchenguid/firstmate`.
+Script chỉ chạy bootstrap khi checkout Firstmate đáp ứng toàn bộ điều kiện:
 
-Script từ chối thực thi bootstrap khi checkout có một trong các trạng thái sau:
+- Origin canonical là `github.com/kunchenguid/firstmate`.
 
-- Origin không đúng.
+- Working tree không dirty.
 
-- Working tree dirty.
+- Current branch có tracked upstream.
 
-- Current branch không có tracked upstream.
+- Local branch không có local-only commit.
 
-- Local branch có local-only commit.
+- Local và upstream không divergent.
 
-- Local và upstream divergent.
+`Dirty` nghĩa là checkout có file được sửa, xóa hoặc tạo mới nhưng chưa commit.
 
-`Dirty` nghĩa là checkout có tracked file đã sửa, file đã xóa hoặc file mới chưa được Git track.
+`Ahead` nghĩa là local branch có commit chưa tồn tại trên upstream đã biết.
 
-`Ahead` nghĩa là local branch có commit chưa có trên upstream đã biết.
+`Behind` nghĩa là upstream đã biết có commit chưa tồn tại ở local branch.
 
-`Behind` nghĩa là upstream đã biết có commit chưa có ở local branch.
-
-`Divergent` nghĩa là local branch và upstream đều có commit riêng.
+`Divergent` nghĩa là local và upstream đều có commit riêng.
 
 Doctor không chạy `git fetch`, vì vậy ahead và behind dựa trên remote-tracking refs hiện có.
 
-## Chrome trong WSL2
+## Chrome DevTools AXI
+
+Firstmate cài `chrome-devtools-axi`, nhưng package này vẫn cần một Chrome hoặc Chromium runtime khi chạy browser automation.
 
 Chrome không bắt buộc cho Firstmate core.
 
-Chrome chỉ cần khi dùng browser automation hoặc test UI thật.
+Browser package có dung lượng lớn nên setup script không tự tải nó.
 
-Doctor coi browser sẵn sàng khi tìm thấy `google-chrome`, `chromium`, `chromium-browser` hoặc một browser endpoint đã cấu hình.
+### Cài Google Chrome trong Ubuntu WSL2
 
-Ví dụ dùng browser endpoint có sẵn:
+Các lệnh dưới đây dành cho Ubuntu hoặc Debian `amd64`.
+
+Kiểm tra kiến trúc trước khi tải:
+
+```bash
+dpkg --print-architecture
+```
+
+Chỉ tiếp tục với URL bên dưới khi kết quả là `amd64`.
+
+Tải gói Google Chrome stable chính thức vào thư mục tạm:
+
+```bash
+cd /tmp
+
+curl --proto '=https' --tlsv1.2 -fL --retry 3 \
+  -o google-chrome-stable_current_amd64.deb \
+  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+```
+
+Kiểm tra metadata của package trước khi cài:
+
+```bash
+dpkg-deb --field ./google-chrome-stable_current_amd64.deb \
+  Package Version Architecture
+```
+
+Package phải có tên `google-chrome-stable` và architecture `amd64`.
+
+Cài package bằng apt để dependency được xử lý đúng:
+
+```bash
+sudo apt install -y ./google-chrome-stable_current_amd64.deb
+```
+
+Lệnh `sudo` sẽ yêu cầu mật khẩu Linux của user WSL2.
+
+Kiểm tra binary và phiên bản:
+
+```bash
+command -v google-chrome
+google-chrome --version
+```
+
+Chạy một smoke test headless:
+
+```bash
+google-chrome --headless --disable-gpu --dump-dom https://example.com
+```
+
+Xóa package tạm sau khi cài thành công:
+
+```bash
+rm -f /tmp/google-chrome-stable_current_amd64.deb
+```
+
+Quay lại repository và chạy doctor:
+
+```bash
+cd /mnt/u/Projects/agent_advance_setup_tutorial
+./scripts/setup-global.sh doctor --agents codex,agy
+```
+
+Doctor phải nhận diện `google-chrome` và vẫn kết thúc bằng exit code `0`.
+
+Có thể kiểm tra trực tiếp AXI sau khi Chrome đã hoạt động:
+
+```bash
+chrome-devtools-axi open https://example.com
+chrome-devtools-axi snapshot
+chrome-devtools-axi stop
+```
+
+Cold start đầu tiên có thể lâu hơn vì Chrome DevTools AXI cần khởi động browser backend.
+
+Tài liệu package Chrome Linux chính thức nằm tại [Google Chrome Enterprise Help](https://support.google.com/chrome/a/answer/9025903).
+
+### Dùng browser endpoint thay cho Chrome cài trong WSL2
+
+Doctor coi browser sẵn sàng khi tìm thấy một trong các command sau:
+
+- `google-chrome`
+
+- `chromium`
+
+- `chromium-browser`
+
+Doctor cũng chấp nhận một browser endpoint đã cấu hình:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
@@ -416,44 +522,54 @@ export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
 
 Chỉ bind DevTools endpoint vào localhost.
 
-Không mở port DevTools ra LAN hoặc internet.
+Không mở DevTools port ra LAN hoặc internet.
 
 ## Tạo project memory
 
-Project setup dùng hai phase để tránh ghi nội dung do model tạo ra mà chưa review.
+Project setup dùng hai phase để nội dung do model tạo luôn được review trước khi ghi vào repository.
 
 ### Phase 1: phân tích và tạo proposal
 
 ```bash
 ./scripts/setup-global.sh project-setup \
-  --url https://gitlab.company.com/group/project.git \
+  --url https://git.mattech.vn/group/project.git \
   --agents codex,agy \
   --model gpt-5.6-sol \
   --effort xhigh
+```
+
+```bash
+./scripts/setup-global.sh project-setup \
+    --url git@gitlab.com:comic-project1/comic-platform.git \
+    --clone-root /mnt/f/my_project/commic-platform \
+    --dest /mnt/f/my_project/commic-platform \
+    --agents codex,agy \
+    --model gpt-5.6-sol \
+    --effort xhigh
 ```
 
 Cú pháp parameter tương thích:
 
 ```bash
 ./scripts/setup-global.sh \
-  --project_setup=https://gitlab.company.com/group/project.git \
+  --project_setup=https://git.mattech.vn/group/project.git \
   --agents=codex,agy \
   --model=gpt-5.6-sol_xhigh
 ```
 
 Repository mặc định được clone dưới `~/src/<host>/<group>/<project>`.
 
-Phân tích chỉ dùng snapshot của tracked files tại `HEAD`.
+Generator chỉ nhận snapshot của tracked files tại `HEAD`.
 
 File untracked, ignored và thay đổi chưa commit không được đưa cho generator.
 
 Codex chạy trong sandbox read-only và không chạy build, test, package manager hoặc project hook.
 
-Proposal được lưu ngoài repository cùng URL, commit, model, effort và các hash kiểm tra.
+Proposal được lưu ngoài repository cùng URL, commit, model, effort và hash kiểm tra.
 
 ### Phase 2: review và apply
 
-Sau khi đọc proposal, áp dụng đúng proposal ID:
+Sau khi review proposal, áp dụng đúng proposal ID:
 
 ```bash
 ./scripts/setup-global.sh project-setup --apply --proposal-id <proposal-id>
@@ -461,31 +577,33 @@ Sau khi đọc proposal, áp dụng đúng proposal ID:
 
 Apply không gọi model lần thứ hai.
 
-Apply tạo `AGENTS.md` và các symlink `CLAUDE.md` hoặc `GEMINI.md` tương ứng với agent đã chọn.
+Apply dừng nếu HEAD, origin, proposal hoặc destination thay đổi sau phase phân tích.
 
-Nếu HEAD, origin, proposal hoặc destination thay đổi sau phase phân tích, apply sẽ dừng.
+Với profile `codex,agy`, apply tạo project `AGENTS.md` và symlink `GEMINI.md` tương ứng.
 
 ## Command reference
 
-| Lệnh | Chức năng | Có thay đổi hệ thống |
+| Lệnh | Chức năng | Thay đổi hệ thống |
 | --- | --- | --- |
-| `tools` | Kiểm tra prerequisite và kế hoạch public tools | Không |
-| `tools --install` | Cài prerequisite còn thiếu, Firstmate và public tools | Có |
-| `tools --apply` | Clone Firstmate và cài tool đã duyệt | Có |
-| `auth` | Đọc `.env` và xác minh GitHub cùng GitLab token | Không |
-| `init --agents ...` | Xem kế hoạch global symlink | Không |
-| `init --agents ... --apply` | Backup và tạo global symlink | Có |
-| `doctor --agents ...` | Kiểm tra setup | Không |
-| `unlink --agents ...` | Xem kế hoạch gỡ setup | Không |
+| `auth` | Xác minh GitHub và GitLab token từ `.env` | Không |
+| `tools` | Kiểm tra prerequisite và lập kế hoạch | Không |
+| `tools --install` | Cài prerequisite, Firstmate và public tools còn thiếu | Có |
+| `tools --apply` | Bootstrap public tools khi prerequisite đã sẵn sàng | Có |
+| `init --agents ...` | Xem kế hoạch global links | Không |
+| `init --agents ... --apply` | Backup và tạo global links | Có |
+| `doctor --agents ...` | Kiểm tra toàn bộ setup | Không |
+| `unlink --agents ...` | Xem kế hoạch gỡ ownership | Không |
 | `unlink --agents ... --apply` | Gỡ ownership và khôi phục backup | Có |
 | `project-setup --url ...` | Clone hoặc phân tích project và tạo proposal | Có |
 | `project-setup --apply --proposal-id ...` | Ghi proposal đã review vào project | Có |
 
-Thêm `--json` vào các lệnh nếu cần structured output.
+Thêm `--json` nếu cần structured output.
 
 ## Cấu trúc implementation
 
-[`scripts/agent_setup.py`](scripts/agent_setup.py) là entrypoint mỏng để giữ tương thích.
+[`scripts/setup-global.sh`](scripts/setup-global.sh) là shell entrypoint cho WSL2 và Linux.
+
+[`scripts/agent_setup.py`](scripts/agent_setup.py) là Python entrypoint mỏng để giữ tương thích.
 
 Logic nằm trong package `scripts/agent_setup_lib`:
 
@@ -496,12 +614,12 @@ Logic nằm trong package `scripts/agent_setup_lib`:
 | `repositories.py` | Git URL, clone và repository status |
 | `project.py` | Project analysis, proposal và apply |
 | `doctor.py` | Kiểm tra read-only |
-| `public_tools.py` | Firstmate bootstrap và gnhf |
-| `system_tools.py` | Node 22.19, apt và official release packages |
-| `auth_env.py` | Parse `.env` và chuẩn bị credential scope hẹp |
+| `public_tools.py` | Firstmate bootstrap và `gnhf` |
+| `system_tools.py` | Node 22.19, apt và official release package |
+| `auth_env.py` | Parse `.env` và tạo subprocess credential scope hẹp |
 | `cli.py` | Argument parser và command routing |
 
-Toàn bộ implementation chỉ dùng Python standard library.
+Toàn bộ Python implementation chỉ dùng standard library.
 
 ## Kiểm thử
 
@@ -517,7 +635,7 @@ Bộ test dùng HOME tạm và không thay đổi global setup thật của user
 
 ## Tài liệu chi tiết
 
-Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md) để đọc giải thích chi tiết hơn về luồng setup và các giới hạn an toàn.
+Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md) để đọc luồng setup chi tiết và các giới hạn an toàn.
 
 ## Upstream
 
@@ -528,3 +646,5 @@ Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md)
 - [GitHub CLI](https://cli.github.com/)
 
 - [GitLab CLI](https://docs.gitlab.com/cli/)
+
+- [Google Chrome for Linux](https://support.google.com/chrome/a/answer/9025903)

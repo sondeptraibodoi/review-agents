@@ -27,10 +27,12 @@ from .common import (
 from .doctor import command_auth_status, command_gitlab_token_status, doctor
 from .global_setup import (
     apply_init,
+    apply_legacy_codex_skill_migration,
     apply_unlink,
     emit_link_plan,
     emit_unlink_plan,
     plan_init_links,
+    plan_legacy_codex_skill_migration,
     plan_unlink,
     recover_pending_transaction,
 )
@@ -222,17 +224,34 @@ def run_command(args: argparse.Namespace, reporter: Reporter) -> int:
         state, _ = store.load(repository_root)
         specs = build_link_specs(repository_root, home, agents)
         plans = plan_init_links(specs, state, repair=args.repair)
+        legacy_plans = plan_legacy_codex_skill_migration(state, home, agents)
         if not args.apply:
             emit_link_plan(reporter, plans)
+            emit_unlink_plan(reporter, legacy_plans)
             missing_commands = [agent for agent in agents if shutil.which(AGENT_COMMANDS[agent]) is None]
             for agent in missing_commands:
                 reporter.emit("WARN", "agent_missing", f"{agent} executable is not installed; configuration can still be planned.")
-            if any(plan.conflict for plan in plans):
+            if any(plan.conflict for plan in plans) or any(
+                plan["action"] == "conflict" for plan in legacy_plans
+            ):
                 raise SetupError("preflight_conflict", "Dry-run found conflicts.")
             reporter.emit("OK", "dry_run", "Dry-run made no filesystem changes.")
             return 0
+        if any(plan["action"] == "conflict" for plan in legacy_plans):
+            emit_unlink_plan(reporter, legacy_plans)
+            raise SetupError(
+                "legacy_skill_migration_conflict",
+                "No changes were applied because a managed legacy Codex skill changed outside this tool.",
+            )
         require_mutation_environment(allow_root=args.allow_root)
         apply_init(repository_root, home, agents, store, reporter, repair=args.repair)
+        apply_legacy_codex_skill_migration(
+            repository_root,
+            home,
+            agents,
+            store,
+            reporter,
+        )
         return 0
     if args.command == "doctor":
         agents = parse_agents(args.agents)

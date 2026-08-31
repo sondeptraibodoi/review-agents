@@ -21,6 +21,7 @@ if SPEC is None or SPEC.loader is None:
 agent_setup = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = agent_setup
 SPEC.loader.exec_module(agent_setup)
+from agent_setup_lib import doctor as doctor_module
 from agent_setup_lib import project as project_module
 
 REPOSITORY_ROOT = SCRIPT_PATH.parent.parent
@@ -112,7 +113,31 @@ class ParsingTests(unittest.TestCase):
 class SourceAndMappingTests(TemporaryHomeTestCase):
     def test_sources_have_valid_skill_frontmatter(self) -> None:
         metadata = agent_setup.validate_sources(REPOSITORY_ROOT)
-        self.assertEqual(set(metadata), {"tuln-opinions", "python-tools"})
+        self.assertEqual(
+            set(metadata),
+            {
+                "tuln-opinions",
+                "python-tools",
+                "lavish",
+                "chrome-devtools-axi",
+            },
+        )
+
+    def test_axi_skill_routes_use_installed_commands_and_define_conditions(self) -> None:
+        lavish = (REPOSITORY_ROOT / "skills/LAVISH.md").read_text(encoding="utf-8")
+        chrome = (REPOSITORY_ROOT / "skills/CHROME_DEVTOOLS_AXI.md").read_text(encoding="utf-8")
+
+        self.assertIn("command -v lavish-axi", lavish)
+        self.assertIn("lavish-axi --help", lavish)
+        self.assertIn("Do not load this skill", lavish)
+        self.assertIn("do not download another copy with `npx -y`", lavish)
+
+        self.assertIn("command -v chrome-devtools-axi", chrome)
+        self.assertIn("chrome-devtools-axi --help", chrome)
+        self.assertIn("browser console", chrome)
+        self.assertIn("network", chrome)
+        self.assertIn("screenshot", chrome)
+        self.assertIn("do not download another copy with `npx -y`", chrome)
 
     def test_shared_destinations_are_deduplicated_with_owners(self) -> None:
         specs = agent_setup.build_link_specs(
@@ -120,9 +145,9 @@ class SourceAndMappingTests(TemporaryHomeTestCase):
             self.home,
             ("codex", "gemini", "agy", "claude"),
         )
-        self.assertEqual(len(specs), 11)
+        self.assertEqual(len(specs), 19)
         codex_skill = next(
-            spec for spec in specs if spec.destination == self.home / ".codex/skills/python-tools/SKILL.md"
+            spec for spec in specs if spec.destination == self.home / ".agents/skills/python-tools/SKILL.md"
         )
         self.assertEqual(codex_skill.owners, ("codex",))
         agy_skill = next(
@@ -131,6 +156,22 @@ class SourceAndMappingTests(TemporaryHomeTestCase):
             if spec.destination == self.home / ".gemini/antigravity-cli/skills/python-tools/SKILL.md"
         )
         self.assertEqual(agy_skill.owners, ("agy",))
+        codex_lavish = next(
+            spec
+            for spec in specs
+            if spec.destination == self.home / ".agents/skills/lavish/SKILL.md"
+        )
+        self.assertEqual(codex_lavish.source, REPOSITORY_ROOT / "skills/LAVISH.md")
+        agy_chrome = next(
+            spec
+            for spec in specs
+            if spec.destination
+            == self.home / ".gemini/antigravity-cli/skills/chrome-devtools-axi/SKILL.md"
+        )
+        self.assertEqual(
+            agy_chrome.source,
+            REPOSITORY_ROOT / "skills/CHROME_DEVTOOLS_AXI.md",
+        )
         gemini_file = next(spec for spec in specs if spec.destination == self.home / ".gemini/GEMINI.md")
         self.assertEqual(gemini_file.owners, ("gemini", "agy"))
 
@@ -145,6 +186,7 @@ class InitLifecycleTests(TemporaryHomeTestCase):
         code, output = self.run_main(["init", "--agents", "codex"])
         self.assertEqual(code, 0, output)
         self.assertFalse((self.home / ".codex").exists())
+        self.assertFalse((self.home / ".agents").exists())
         self.assertFalse((self.home / ".local").exists())
 
     def test_init_is_idempotent_and_unlink_restores_previous_file(self) -> None:
@@ -163,7 +205,7 @@ class InitLifecycleTests(TemporaryHomeTestCase):
 
         state_path = self.home / ".local/state/agent-advance-setup/state.json"
         state_before = json.loads(state_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(state_before["links"]), 11)
+        self.assertEqual(len(state_before["links"]), 19)
         self.assertEqual(
             state_before["links"][os.fspath(self.home / ".gemini/GEMINI.md")]["owners"],
             ["gemini", "agy"],
@@ -179,7 +221,9 @@ class InitLifecycleTests(TemporaryHomeTestCase):
         self.assertEqual(code, 0, output)
         self.assertFalse(old_path.is_symlink())
         self.assertEqual(old_path.read_text(encoding="utf-8"), "old instructions\n")
-        self.assertFalse(os.path.lexists(self.home / ".codex/skills/python-tools/SKILL.md"))
+        self.assertFalse(os.path.lexists(self.home / ".agents/skills/python-tools/SKILL.md"))
+        self.assertFalse(os.path.lexists(self.home / ".agents/skills/lavish/SKILL.md"))
+        self.assertFalse(os.path.lexists(self.home / ".agents/skills/chrome-devtools-axi/SKILL.md"))
         self.assertTrue((self.home / ".gemini/skills/python-tools/SKILL.md").is_symlink())
 
         code, output = self.run_main(["unlink", "--agents", "gemini,agy,claude", "--apply"])
@@ -248,6 +292,71 @@ class InitLifecycleTests(TemporaryHomeTestCase):
         self.assertEqual(code, 0, output)
         self.assertTrue(destination.is_symlink())
         self.assertEqual(os.readlink(destination), "missing-old-target.md")
+
+    def test_init_migrates_managed_legacy_codex_skill_links(self) -> None:
+        code, output = self.run_main(["init", "--agents", "codex", "--apply"])
+        self.assertEqual(code, 0, output)
+
+        current = self.home / ".agents/skills/lavish/SKILL.md"
+        legacy = self.home / ".codex/skills/lavish/SKILL.md"
+        legacy.parent.mkdir(parents=True)
+        legacy.symlink_to(REPOSITORY_ROOT / "skills/LAVISH.md")
+
+        state_path = self.home / ".local/state/agent-advance-setup/state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        record = dict(state["links"][os.fspath(current)])
+        record["destination"] = os.fspath(legacy)
+        record["previous"] = {"kind": "absent"}
+        state["links"][os.fspath(legacy)] = record
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+        code, output = self.run_main(["init", "--agents", "codex", "--apply"])
+
+        self.assertEqual(code, 0, output)
+        self.assertTrue(current.is_symlink())
+        self.assertFalse(os.path.lexists(legacy))
+        migrated_state = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertNotIn(os.fspath(legacy), migrated_state["links"])
+        self.assertIn("legacy_skill_migration_complete", output)
+
+    def test_doctor_fails_when_a_routed_public_cli_is_missing(self) -> None:
+        code, output = self.run_main(["init", "--agents", "codex", "--apply"])
+        self.assertEqual(code, 0, output)
+        empty_env = self.root / "empty.env"
+        empty_env.write_text("", encoding="utf-8")
+
+        def command_result(command: str) -> dict[str, str]:
+            if command == "lavish-axi":
+                return {"status": "missing", "command": command}
+            return {
+                "status": "ok",
+                "command": command,
+                "path": f"/usr/bin/{command}",
+                "version": "test",
+            }
+
+        authenticated = {"authenticated": True, "status": "ok"}
+        with mock.patch.object(
+            doctor_module,
+            "command_version",
+            side_effect=command_result,
+        ), mock.patch.object(
+            doctor_module,
+            "command_auth_status",
+            return_value=authenticated,
+        ):
+            code, output = self.run_main(
+                [
+                    "doctor",
+                    "--agents",
+                    "codex",
+                    "--env-file",
+                    os.fspath(empty_env),
+                ]
+            )
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("routed_tool: lavish: lavish-axi is missing.", output)
 
 
 class ProposalTests(TemporaryHomeTestCase):

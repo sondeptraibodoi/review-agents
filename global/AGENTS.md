@@ -25,3 +25,17 @@ When a task would benefit from TuLN's viewpoints, load the installed `tuln-opini
 ## Python tools
 
 Before using Python or managing Python dependencies, load the installed `python-tools` skill.
+
+## Lavish visual planning and review
+
+Before producing a complex plan, comparison, architecture diagram, UI proposal, visual report, or another artifact that is easier to review visually than as prose, load the installed `lavish` skill.
+
+Do not load `lavish` for a short factual answer, a small code edit, or a simple explanation that is clearer as plain text.
+
+## Browser E2E and Chrome debugging
+
+For frontend, browser, UI, or end-to-end testing tasks that require a real browser, load the installed `chrome-devtools-axi` skill.
+
+Use Chrome DevTools AXI to reproduce the end-user flow, inspect the rendered UI, review browser console errors and failed network requests, test relevant viewport sizes, and capture screenshots when visual evidence matters.
+
+Do not load `chrome-devtools-axi` when a simple HTTP request or static source inspection fully answers the task.
