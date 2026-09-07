@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thin compatibility entrypoint for the modular WSL2 agent setup tool."""
+"""Thin compatibility entrypoint for the modular macOS/Linux setup tool."""
 
 from __future__ import annotations
 

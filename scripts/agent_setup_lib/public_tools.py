@@ -12,14 +12,14 @@ from typing import Any, Sequence
 from .common import Reporter, SetupError, path_is_within, require_safe_home
 from .doctor import command_version, inspect_firstmate_checkout
 from .repositories import ensure_repository, parse_repository_url, run_checked
-from .system_tools import install_wsl_prerequisites
+from .system_tools import browser_status, install_system_prerequisites
 
 
 FIRSTMATE_URL = "https://github.com/kunchenguid/firstmate.git"
 FIRSTMATE_CANONICAL = "github.com/kunchenguid/firstmate"
 
 # These names come from Firstmate's COMMON_TOOLS and tmux backend requirements.
-# We delegate only user-level tools whose upstream installer is suitable for WSL2.
+# We delegate only user-level tools whose upstream installer is suitable for macOS/Linux.
 FIRSTMATE_DELEGATED_TOOLS = (
     "no-mistakes",
     "gh-axi",
@@ -100,13 +100,19 @@ def inspect_local_prerequisites() -> dict[str, dict[str, Any]]:
     names = (*LOCAL_REQUIRED_TOOLS, *LOCAL_RECOMMENDED_TOOLS)
     results = {name: command_version(name) for name in names}
     for result in results.values():
-        result["wsl_native"] = is_wsl_native_result(result)
+        result["native"] = is_native_result(result)
     return results
 
 
-def is_wsl_native_result(result: dict[str, Any]) -> bool:
+def is_native_result(result: dict[str, Any]) -> bool:
     path = str(result.get("path", ""))
     return not path or WINDOWS_MOUNTED_EXECUTABLE_RE.match(path) is None
+
+
+def is_wsl_native_result(result: dict[str, Any]) -> bool:
+    """Backward-compatible alias for callers using the old Linux-only name."""
+
+    return is_native_result(result)
 
 
 def prerequisite_blockers(results: dict[str, dict[str, Any]]) -> list[str]:
@@ -115,8 +121,8 @@ def prerequisite_blockers(results: dict[str, dict[str, Any]]) -> list[str]:
         result = results[name]
         if result["status"] != "ok":
             blockers.append(name)
-        elif not is_wsl_native_result(result):
-            blockers.append(f"{name} (WSL-native)")
+        elif not is_native_result(result):
+            blockers.append(f"{name} (native executable required)")
     node = results["node"]
     if node["status"] == "ok":
         version = node_version(str(node.get("version", "")))
@@ -207,20 +213,20 @@ def emit_prerequisites(
 ) -> None:
     for name in LOCAL_REQUIRED_TOOLS:
         result = results[name]
-        native = is_wsl_native_result(result)
+        native = is_native_result(result)
         level = "OK" if result["status"] == "ok" and native else ("PLAN" if install_mode else "ERROR")
-        status = result["status"] if native else "windows-path"
+        status = result["status"] if native else "non-native-path"
         reporter.emit(level, "tool_prerequisite", f"{name}: {status}")
     for name in LOCAL_RECOMMENDED_TOOLS:
         result = results[name]
-        native = is_wsl_native_result(result)
+        native = is_native_result(result)
         if result["status"] == "ok" and native:
             level = "OK"
         elif install_mode and name == "glab":
             level = "PLAN"
         else:
             level = "WARN"
-        status = result["status"] if native else "windows-path"
+        status = result["status"] if native else "non-native-path"
         reporter.emit(level, "tool_recommended", f"{name}: {status}")
 
 
@@ -241,7 +247,7 @@ def emit_firstmate_plan(reporter: Reporter, report: BootstrapReport) -> dict[str
         reporter.emit(
             "ERROR",
             "firstmate_system_tool",
-            f"Firstmate reports {name} missing; install it as a WSL2 prerequisite before apply.",
+            f"Firstmate reports {name} missing; install it as a native system prerequisite before apply.",
         )
     for name in classified["unknown"]:
         reporter.emit(
@@ -301,16 +307,6 @@ def install_gnhf(reporter: Reporter) -> None:
         reporter.emit("OK", "gnhf_installed", "Installed gnhf with its official npm package.")
 
 
-def browser_status() -> dict[str, Any]:
-    commands = [name for name in ("google-chrome", "chromium", "chromium-browser") if shutil.which(name)]
-    browser_url = bool(os.environ.get("CHROME_DEVTOOLS_AXI_BROWSER_URL"))
-    return {
-        "commands": commands,
-        "browser_url_configured": browser_url,
-        "available": bool(commands or browser_url),
-    }
-
-
 def run_public_tools(
     *,
     home: Path,
@@ -327,7 +323,7 @@ def run_public_tools(
     reporter.data["tool_prerequisites_before"] = prerequisites
     emit_prerequisites(reporter, prerequisites, install_mode=install_prerequisites)
     if install_prerequisites:
-        install_wsl_prerequisites(home, prerequisites, reporter)
+        install_system_prerequisites(home, prerequisites, reporter)
         prerequisites = inspect_local_prerequisites()
         reporter.data["tool_prerequisites_after"] = prerequisites
         emit_prerequisites(reporter, prerequisites)
@@ -336,7 +332,7 @@ def run_public_tools(
     if blockers:
         raise SetupError(
             "tool_prerequisites_missing",
-            f"Install required WSL2 prerequisites first: {', '.join(blockers)}.",
+            f"Install required native prerequisites first: {', '.join(blockers)}.",
             details={
                 "required": list(LOCAL_REQUIRED_TOOLS),
                 "node_minimum_version": MINIMUM_NODE_LABEL,
@@ -422,7 +418,7 @@ def run_public_tools(
     for name in final_report.manual:
         reporter.emit("WARN", "firstmate_manual_tool", f"Manual Firstmate dependency remains: {name}.")
 
-    browser = browser_status()
+    browser = browser_status(home)
     reporter.data["chrome_browser"] = browser
     if browser["available"]:
         reporter.emit("OK", "chrome_browser", "Chrome or a configured browser endpoint is available.")

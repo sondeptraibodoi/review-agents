@@ -34,6 +34,19 @@ def available_prerequisites() -> dict[str, dict[str, object]]:
 
 
 class BootstrapParsingTests(unittest.TestCase):
+    def test_platform_status_recognizes_macos(self) -> None:
+        with mock.patch.object(doctor_module.platform, "system", return_value="Darwin"), mock.patch.object(
+            doctor_module.platform,
+            "release",
+            return_value="25.0.0",
+        ):
+            result = doctor_module.platform_status()
+
+        self.assertTrue(result["supported"])
+        self.assertTrue(result["is_macos"])
+        self.assertFalse(result["is_linux"])
+        self.assertFalse(result["is_wsl"])
+
     def test_tools_install_is_a_distinct_mutating_mode(self) -> None:
         parser = cli_module.build_parser()
         args = parser.parse_args(["tools", "--install"])
@@ -208,7 +221,7 @@ class BootstrapParsingTests(unittest.TestCase):
         results = available_prerequisites()
         results["npm"]["path"] = "/mnt/c/nvm4w/nodejs/npm"
 
-        self.assertEqual(public_tools.prerequisite_blockers(results), ["npm (WSL-native)"])
+        self.assertEqual(public_tools.prerequisite_blockers(results), ["npm (native executable required)"])
 
 
 class PublicToolsLifecycleTests(unittest.TestCase):
@@ -292,7 +305,7 @@ class PublicToolsLifecycleTests(unittest.TestCase):
             side_effect=(before, after),
         ), mock.patch.object(
             public_tools,
-            "install_wsl_prerequisites",
+            "install_system_prerequisites",
         ) as install_system, mock.patch.object(
             public_tools,
             "validate_firstmate_checkout",

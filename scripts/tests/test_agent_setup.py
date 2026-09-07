@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import importlib.util
 import io
 import json
@@ -22,6 +23,7 @@ agent_setup = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = agent_setup
 SPEC.loader.exec_module(agent_setup)
 from agent_setup_lib import doctor as doctor_module
+from agent_setup_lib import common as common_module
 from agent_setup_lib import project as project_module
 
 REPOSITORY_ROOT = SCRIPT_PATH.parent.parent
@@ -410,7 +412,7 @@ class ProposalTests(TemporaryHomeTestCase):
         self.assertEqual(os.readlink(repository / "CLAUDE.md"), "AGENTS.md")
         self.assertEqual(os.readlink(repository / "GEMINI.md"), "AGENTS.md")
 
-    @unittest.skipUnless(os.name == "posix", "Generator isolation is validated on WSL2/Linux.")
+    @unittest.skipUnless(os.name == "posix", "Generator isolation is validated on macOS/Linux.")
     def test_project_analysis_uses_codex_contract_and_normalizes_model_suffix(self) -> None:
         repository = self.root / "clones/project"
         repository.mkdir(parents=True)
@@ -483,7 +485,7 @@ cp "$FAKE_PROPOSAL" "$output"
 
 
 class SnapshotTests(TemporaryHomeTestCase):
-    @unittest.skipUnless(os.name == "posix", "Git archive behavior is validated on WSL2/Linux.")
+    @unittest.skipUnless(os.name == "posix", "Git archive behavior is validated on macOS/Linux.")
     def test_tracked_snapshot_excludes_untracked_files(self) -> None:
         repository = self.root / "repo"
         repository.mkdir()
@@ -498,6 +500,37 @@ class SnapshotTests(TemporaryHomeTestCase):
         agent_setup.create_tracked_snapshot(repository, snapshot)
         self.assertEqual((snapshot / "tracked.txt").read_text(), "tracked\n")
         self.assertFalse((snapshot / "secret.env").exists())
+
+
+class FilesystemCompatibilityTests(unittest.TestCase):
+    def test_macos_ignores_unsupported_directory_fsync(self) -> None:
+        with mock.patch.object(common_module.os, "open", return_value=91), mock.patch.object(
+            common_module.os,
+            "fsync",
+            side_effect=OSError(errno.EINVAL, "not supported"),
+        ), mock.patch.object(common_module.os, "close") as close, mock.patch.object(
+            common_module.platform,
+            "system",
+            return_value="Darwin",
+        ):
+            common_module.fsync_directory(Path("/tmp/test"))
+
+        close.assert_called_once_with(91)
+
+    def test_directory_fsync_error_is_not_hidden_on_linux(self) -> None:
+        with mock.patch.object(common_module.os, "open", return_value=92), mock.patch.object(
+            common_module.os,
+            "fsync",
+            side_effect=OSError(errno.EIO, "I/O failure"),
+        ), mock.patch.object(common_module.os, "close") as close, mock.patch.object(
+            common_module.platform,
+            "system",
+            return_value="Linux",
+        ):
+            with self.assertRaises(OSError):
+                common_module.fsync_directory(Path("/tmp/test"))
+
+        close.assert_called_once_with(92)
 
 
 if __name__ == "__main__":

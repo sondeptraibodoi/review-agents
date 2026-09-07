@@ -121,6 +121,20 @@ class SystemInstallerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_homebrew_on_path_is_selected_and_prepended(self) -> None:
+        brew = self.home / "homebrew/bin/brew"
+        brew.parent.mkdir(parents=True)
+        brew.write_text("#!/bin/sh\n", encoding="utf-8")
+        brew.chmod(0o755)
+        with mock.patch.object(system_tools.shutil, "which", return_value=os.fspath(brew)), mock.patch.dict(
+            os.environ,
+            {"PATH": "/usr/bin:/bin"},
+        ):
+            selected = system_tools.find_homebrew()
+
+            self.assertEqual(selected, os.fspath(brew))
+            self.assertEqual(os.environ["PATH"].split(os.pathsep)[0], os.fspath(brew.parent))
+
     def test_nvm_node_install_activates_returned_linux_bin(self) -> None:
         nvm_script = self.home / ".nvm/nvm.sh"
         nvm_script.parent.mkdir()
@@ -155,9 +169,12 @@ class SystemInstallerTests(unittest.TestCase):
             self.assertEqual(os.environ["PATH"].split(os.pathsep)[0], os.fspath(node.parent))
             self.assertNotIn(os.fspath(old_node_bin), os.environ["PATH"].split(os.pathsep))
 
-    def test_installs_missing_gh_and_glab_without_sudo(self) -> None:
+    def test_linux_installs_missing_gh_and_glab_without_sudo(self) -> None:
         results = prerequisite_results()
-        with mock.patch.object(system_tools, "authorize_sudo") as authorize, mock.patch.object(
+        with mock.patch.object(system_tools.platform, "system", return_value="Linux"), mock.patch.object(
+            system_tools,
+            "authorize_sudo",
+        ) as authorize, mock.patch.object(
             system_tools,
             "dpkg_architecture",
             return_value="amd64",
@@ -165,7 +182,7 @@ class SystemInstallerTests(unittest.TestCase):
             system_tools,
             "install_release_package_user",
         ) as install:
-            system_tools.install_wsl_prerequisites(self.home, results, self.reporter)
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
 
         authorize.assert_not_called()
         self.assertEqual(
@@ -217,21 +234,180 @@ class SystemInstallerTests(unittest.TestCase):
             self.assertEqual(target.stat().st_mode & 0o777, 0o755)
             self.assertEqual(os.environ["PATH"].split(os.pathsep)[0], os.fspath(target.parent))
 
-    def test_node_only_install_does_not_require_sudo(self) -> None:
+    def test_linux_node_only_install_does_not_require_sudo(self) -> None:
         results = prerequisite_results()
         results["node"] = {"status": "missing"}
         results["npm"] = {"status": "missing"}
         results["gh"] = {"status": "ok", "path": "/usr/bin/gh", "version": "gh 2.98.0"}
         results["glab"] = {"status": "ok", "path": "/usr/bin/glab", "version": "glab 1.115.0"}
 
-        with mock.patch.object(system_tools, "authorize_sudo") as authorize, mock.patch.object(
+        with mock.patch.object(system_tools.platform, "system", return_value="Linux"), mock.patch.object(
+            system_tools,
+            "authorize_sudo",
+        ) as authorize, mock.patch.object(
             system_tools,
             "install_supported_node_with_nvm",
         ) as install_node:
-            system_tools.install_wsl_prerequisites(self.home, results, self.reporter)
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
 
         authorize.assert_not_called()
         install_node.assert_called_once_with(self.home, self.reporter)
+
+    def test_macos_installs_missing_tools_with_homebrew(self) -> None:
+        results = prerequisite_results()
+        with mock.patch.object(system_tools.platform, "system", return_value="Darwin"), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="arm64",
+        ), mock.patch.object(
+            system_tools,
+            "require_homebrew",
+            return_value="/opt/homebrew/bin/brew",
+        ), mock.patch.object(
+            system_tools,
+            "brew_install",
+        ) as install:
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        install.assert_called_once_with("/opt/homebrew/bin/brew", ["gh", "glab"])
+
+    def test_macos_reports_missing_homebrew(self) -> None:
+        results = prerequisite_results()
+        with mock.patch.object(system_tools.platform, "system", return_value="Darwin"), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="arm64",
+        ), mock.patch.object(
+            system_tools,
+            "find_homebrew",
+            return_value=None,
+        ):
+            with self.assertRaises(SetupError) as raised:
+                system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        self.assertEqual(raised.exception.code, "homebrew_missing")
+
+    def test_macos_does_not_require_homebrew_when_prerequisites_are_ready(self) -> None:
+        results = prerequisite_results()
+        results["gh"] = {"status": "ok", "path": "/usr/local/bin/gh", "version": "gh 2.98.0"}
+        results["glab"] = {"status": "ok", "path": "/usr/local/bin/glab", "version": "glab 1.115.0"}
+        with mock.patch.object(system_tools.platform, "system", return_value="Darwin"), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="x86_64",
+        ), mock.patch.object(
+            system_tools,
+            "require_homebrew",
+        ) as require_brew:
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        require_brew.assert_not_called()
+
+    def test_macos_uses_homebrew_node_when_nvm_is_missing(self) -> None:
+        results = prerequisite_results()
+        results["node"] = {"status": "missing"}
+        results["npm"] = {"status": "missing"}
+        results["gh"] = {"status": "ok", "path": "/opt/homebrew/bin/gh", "version": "gh 2.98.0"}
+        results["glab"] = {"status": "ok", "path": "/opt/homebrew/bin/glab", "version": "glab 1.115.0"}
+        with mock.patch.object(system_tools.platform, "system", return_value="Darwin"), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="x86_64",
+        ), mock.patch.object(
+            system_tools,
+            "require_homebrew",
+            return_value="/usr/local/bin/brew",
+        ), mock.patch.object(
+            system_tools,
+            "brew_install",
+        ) as install, mock.patch.object(
+            system_tools,
+            "install_supported_node_with_nvm",
+        ) as install_nvm:
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        install.assert_called_once_with("/usr/local/bin/brew", ["node"])
+        install_nvm.assert_not_called()
+
+    def test_macos_prefers_existing_nvm_for_node(self) -> None:
+        nvm_script = self.home / ".nvm/nvm.sh"
+        nvm_script.parent.mkdir()
+        nvm_script.write_text("# test\n", encoding="utf-8")
+        results = prerequisite_results()
+        results["node"] = {"status": "missing"}
+        results["npm"] = {"status": "missing"}
+        results["gh"] = {"status": "ok", "path": "/opt/homebrew/bin/gh", "version": "gh 2.98.0"}
+        results["glab"] = {"status": "ok", "path": "/opt/homebrew/bin/glab", "version": "glab 1.115.0"}
+        with mock.patch.object(system_tools.platform, "system", return_value="Darwin"), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="arm64",
+        ), mock.patch.object(
+            system_tools,
+            "require_homebrew",
+        ) as require_brew, mock.patch.object(
+            system_tools,
+            "install_supported_node_with_nvm",
+        ) as install_nvm:
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        require_brew.assert_not_called()
+        install_nvm.assert_called_once_with(self.home, self.reporter)
+
+    def test_macos_honors_custom_nvm_directory(self) -> None:
+        custom_nvm = self.home / "tools/nvm"
+        custom_nvm.mkdir(parents=True)
+        (custom_nvm / "nvm.sh").write_text("# test\n", encoding="utf-8")
+        results = prerequisite_results()
+        results["node"] = {"status": "missing"}
+        results["npm"] = {"status": "missing"}
+        results["gh"] = {"status": "ok", "path": "/opt/homebrew/bin/gh", "version": "gh 2.98.0"}
+        results["glab"] = {"status": "ok", "path": "/opt/homebrew/bin/glab", "version": "glab 1.115.0"}
+        with mock.patch.dict(os.environ, {"NVM_DIR": os.fspath(custom_nvm)}), mock.patch.object(
+            system_tools.platform,
+            "system",
+            return_value="Darwin",
+        ), mock.patch.object(
+            system_tools.platform,
+            "machine",
+            return_value="arm64",
+        ), mock.patch.object(
+            system_tools,
+            "require_homebrew",
+        ) as require_brew, mock.patch.object(
+            system_tools,
+            "install_supported_node_with_nvm",
+        ) as install_nvm:
+            system_tools.install_system_prerequisites(self.home, results, self.reporter)
+
+        require_brew.assert_not_called()
+        install_nvm.assert_called_once_with(self.home, self.reporter)
+
+    def test_macos_rejects_unknown_architecture(self) -> None:
+        with mock.patch.object(system_tools.platform, "machine", return_value="powerpc"):
+            with self.assertRaises(SetupError) as raised:
+                system_tools.validate_macos_architecture()
+
+        self.assertEqual(raised.exception.code, "unsupported_architecture")
+
+    def test_macos_browser_application_is_detected_without_path_command(self) -> None:
+        applications = Path(self.temporary.name) / "Applications"
+        chrome = applications / "Google Chrome.app/Contents/MacOS/Google Chrome"
+        chrome.parent.mkdir(parents=True)
+        chrome.write_text("", encoding="utf-8")
+        with mock.patch.object(system_tools.shutil, "which", return_value=None), mock.patch.dict(
+            os.environ,
+            {},
+            clear=True,
+        ):
+            result = system_tools.browser_status(
+                self.home,
+                system_name="Darwin",
+                application_roots=(applications,),
+            )
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["applications"], [os.fspath(chrome)])
 
 
 if __name__ == "__main__":

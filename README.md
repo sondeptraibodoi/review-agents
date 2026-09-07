@@ -1,6 +1,6 @@
 # Agent Advance Setup Tutorial
 
-Repository này cung cấp một bộ script Python standard library để chuẩn hóa môi trường coding agent trên WSL2.
+Repository này cung cấp một bộ script Python standard library để chuẩn hóa môi trường coding agent trên macOS, WSL2 và Linux.
 
 Profile mặc định hiện tại là Codex và Agy, trong đó Agy là Antigravity CLI.
 
@@ -10,9 +10,9 @@ Script ưu tiên tái sử dụng installer và package public chính chủ thay
 
 ## Kết quả mong đợi
 
-Sau khi hoàn tất quick start, môi trường WSL2 có:
+Sau khi hoàn tất quick start, môi trường macOS hoặc Linux có:
 
-- Node.js 22.19 trở lên từ NVM trong Linux home.
+- Node.js 22.19 trở lên từ NVM trên Linux, hoặc NVM/Homebrew trên macOS.
 
 - Git, tmux, GitHub CLI `gh` và GitLab CLI `glab`.
 
@@ -32,11 +32,11 @@ Sau khi hoàn tất quick start, môi trường WSL2 có:
 
 Script có thể tự động:
 
-- Cài hoặc chọn Node.js 22.19 bằng NVM hiện có.
+- Cài hoặc chọn Node.js 22.19 trở lên bằng NVM hiện có, hoặc Homebrew trên macOS.
 
-- Cài `git` và `tmux` bằng apt khi còn thiếu.
+- Cài `git` và `tmux` bằng apt trên Linux hoặc Homebrew trên macOS khi còn thiếu.
 
-- Cài `gh` và `glab` vào `~/.local/bin` từ release chính thức.
+- Cài `gh` và `glab` từ release `.deb` chính thức trên Linux hoặc Homebrew trên macOS.
 
 - Clone và bootstrap Firstmate từ `kunchenguid/firstmate`.
 
@@ -62,24 +62,30 @@ Script không tự động:
 
 ## Môi trường mục tiêu
 
-- WSL2 hoặc Linux.
+- macOS Apple Silicon, macOS Intel, WSL2 hoặc Linux.
 
-- Python 3 của Linux distribution.
+- Python 3.10 trở lên, native của hệ điều hành.
 
 - Python standard library, không cần `pip install`.
 
-- NVM trong Linux home.
+- Homebrew trên macOS khi cần cài prerequisite còn thiếu.
+
+- NVM là tùy chọn trên macOS và được ưu tiên nếu đã có.
 
 - Node.js 22.19 trở lên.
 
-- npm Linux, không dùng npm hoặc Node từ `/mnt/c`.
+- npm native của hệ điều hành, không dùng npm hoặc Node từ `/mnt/c` khi chạy trên WSL2.
 
 - Codex CLI và Agy nếu dùng profile mặc định.
 
-Mở Ubuntu WSL2 và vào repository:
+Mở terminal và vào repository:
 
 ```bash
+# WSL2
 cd /mnt/u/Projects/agent_advance_setup_tutorial
+
+# macOS hoặc Linux native
+cd ~/Projects/agent_advance_setup_tutorial
 ```
 
 ## Quick start cho Codex và Agy
@@ -156,9 +162,9 @@ Lệnh `--install` thực hiện theo thứ tự:
 
 1. Xác thực các token đã cấu hình.
 
-2. Kiểm tra WSL2, Python, Node, npm, Git, tmux, `gh`, `glab` và Codex.
+2. Kiểm tra platform, Python, Node, npm, Git, tmux, `gh`, `glab` và Codex.
 
-3. Kích hoạt hoặc cài Node.js 22.19 bằng NVM.
+3. Kích hoạt hoặc cài Node.js bằng NVM, hoặc Homebrew trên macOS khi NVM không có.
 
 4. Cài prerequisite nền còn thiếu.
 
@@ -172,7 +178,7 @@ Lệnh `--install` thực hiện theo thứ tự:
 
 9. Chạy lại detect-only để xác minh kết quả.
 
-Nếu script vừa thay Node.js, mở shell WSL mới hoặc chạy:
+Nếu script vừa thay Node.js bằng NVM, mở shell mới hoặc chạy:
 
 ```bash
 nvm use 22.19
@@ -257,9 +263,9 @@ Phạm vi cài đặt được chia rõ như sau:
 | --- | --- | --- |
 | Firstmate user-level | `no-mistakes`, `gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `tasks-axi`, `quota-axi` | `fm-bootstrap.sh` của Firstmate |
 | Firstmate backend `tmux` | `treehouse` | `fm-bootstrap.sh` của Firstmate |
-| Prerequisite nền | `git`, `tmux` | Setup script qua apt khi thiếu |
-| Node.js | `node>=22.19`, `npm` | Setup script qua NVM |
-| Provider CLI | `gh`, `glab` | Setup script từ official release |
+| Prerequisite nền | `git`, `tmux` | apt trên Linux hoặc Homebrew trên macOS |
+| Node.js | `node>=22.19`, `npm` | NVM hiện có hoặc Homebrew trên macOS |
+| Provider CLI | `gh`, `glab` | Official `.deb` trên Linux hoặc Homebrew trên macOS |
 | Tool độc lập | `gnhf` | Setup script qua npm |
 | Generator | `codex` | Cài riêng, script chỉ kiểm tra |
 | Browser runtime | Chrome hoặc Chromium | Cài hoặc cấu hình riêng |
@@ -425,6 +431,31 @@ Chrome không bắt buộc cho Firstmate core.
 
 Browser package có dung lượng lớn nên setup script không tự tải nó.
 
+### Cài Google Chrome trên macOS
+
+Việc tải Chrome có dung lượng lớn nên phải được người dùng chủ động thực hiện:
+
+```bash
+brew install --cask google-chrome
+```
+
+Kiểm tra bản cài native:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+```
+
+Chạy smoke test headless:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless \
+  --disable-gpu \
+  --dump-dom https://example.com
+```
+
+Doctor nhận diện Chrome và Chromium trong `/Applications`, `~/Applications`, trên `PATH`, hoặc qua browser endpoint.
+
 ### Cài Google Chrome trong Ubuntu WSL2
 
 Các lệnh dưới đây dành cho Ubuntu hoặc Debian `amd64`.
@@ -504,7 +535,7 @@ Cold start đầu tiên có thể lâu hơn vì Chrome DevTools AXI cần khởi
 
 Tài liệu package Chrome Linux chính thức nằm tại [Google Chrome Enterprise Help](https://support.google.com/chrome/a/answer/9025903).
 
-### Dùng browser endpoint thay cho Chrome cài trong WSL2
+### Dùng browser endpoint thay cho Chrome cài local
 
 Doctor coi browser sẵn sàng khi tìm thấy một trong các command sau:
 
@@ -601,7 +632,7 @@ Thêm `--json` nếu cần structured output.
 
 ## Cấu trúc implementation
 
-[`scripts/setup-global.sh`](scripts/setup-global.sh) là shell entrypoint cho WSL2 và Linux.
+[`scripts/setup-global.sh`](scripts/setup-global.sh) là shell entrypoint cho macOS, WSL2 và Linux.
 
 [`scripts/agent_setup.py`](scripts/agent_setup.py) là Python entrypoint mỏng để giữ tương thích.
 
@@ -615,7 +646,7 @@ Logic nằm trong package `scripts/agent_setup_lib`:
 | `project.py` | Project analysis, proposal và apply |
 | `doctor.py` | Kiểm tra read-only |
 | `public_tools.py` | Firstmate bootstrap và `gnhf` |
-| `system_tools.py` | Node 22.19, apt và official release package |
+| `system_tools.py` | Node 22.19, Homebrew, apt và official Linux release package |
 | `auth_env.py` | Parse `.env` và tạo subprocess credential scope hẹp |
 | `cli.py` | Argument parser và command routing |
 
@@ -623,7 +654,7 @@ Toàn bộ Python implementation chỉ dùng standard library.
 
 ## Kiểm thử
 
-Chạy trong WSL2:
+Chạy trên macOS, WSL2 hoặc Linux:
 
 ```bash
 python3 -B -m unittest discover -s scripts/tests -v
@@ -635,7 +666,7 @@ Bộ test dùng HOME tạm và không thay đổi global setup thật của user
 
 ## Tài liệu chi tiết
 
-Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md) để đọc luồng setup chi tiết và các giới hạn an toàn.
+Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md) cho WSL2 hoặc [`docs/huong-dan-setup-global-macos.md`](docs/huong-dan-setup-global-macos.md) cho macOS.
 
 ## Upstream
 
@@ -648,3 +679,5 @@ Xem [`docs/huong-dan-setup-global-wsl2.md`](docs/huong-dan-setup-global-wsl2.md)
 - [GitLab CLI](https://docs.gitlab.com/cli/)
 
 - [Google Chrome for Linux](https://support.google.com/chrome/a/answer/9025903)
+
+- [Google Chrome](https://www.google.com/chrome/)

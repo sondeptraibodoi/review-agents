@@ -1,4 +1,4 @@
-"""Install WSL2-native system prerequisites from official release assets."""
+"""Install native macOS and Linux system prerequisites."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ CHECKSUM_LINE_RE = re.compile(r"^([0-9A-Fa-f]{64})\s+\*?(.+)$")
 WINDOWS_MOUNTED_EXECUTABLE_RE = re.compile(r"^/mnt/[A-Za-z]/")
 MINIMUM_NODE_VERSION = (22, 19, 0)
 NVM_NODE_SELECTOR = "22.19"
+SUPPORTED_MACOS_ARCHITECTURES = {"arm64", "x86_64"}
 ALLOWED_DOWNLOAD_HOSTS = {
     "github.com",
     "objects.githubusercontent.com",
@@ -37,6 +38,15 @@ ALLOWED_DOWNLOAD_HOSTS = {
     "gitlab.com",
     "storage.googleapis.com",
 }
+CHROME_COMMANDS = ("google-chrome", "chromium", "chromium-browser")
+MACOS_BROWSER_APPLICATIONS = (
+    "Google Chrome.app/Contents/MacOS/Google Chrome",
+    "Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+    "Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+    "Google Chrome Dev.app/Contents/MacOS/Google Chrome Dev",
+    "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "Chromium.app/Contents/MacOS/Chromium",
+)
 
 
 def _https_url(value: str, *, allowed_hosts: set[str]) -> str:
@@ -127,7 +137,7 @@ def dpkg_architecture() -> str:
     if architecture not in {"amd64", "arm64"}:
         raise SetupError(
             "unsupported_architecture",
-            f"Only amd64 and arm64 WSL2 architectures are supported: {architecture!r}",
+            f"Only amd64 and arm64 Linux architectures are supported: {architecture!r}",
             exit_code=3,
         )
     return architecture
@@ -331,7 +341,7 @@ def install_release_package_user(
     current_path = os.environ.get("PATH", "")
     if local_bin_text not in current_path.split(os.pathsep):
         os.environ["PATH"] = f"{local_bin_text}{os.pathsep}{current_path}"
-    reporter.emit("OK", "user_tool_installed", f"Installed WSL2-native {name} at {target}.")
+    reporter.emit("OK", "user_tool_installed", f"Installed Linux-native {name} at {target}.")
 
 
 def _result_needs_install(result: dict[str, Any]) -> bool:
@@ -344,14 +354,117 @@ def _node_version(result: dict[str, Any]) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
-def install_supported_node_with_nvm(home: Path, reporter: Reporter) -> None:
+def _node_needs_install(results: dict[str, dict[str, Any]]) -> bool:
+    node = results["node"]
+    installed_node_version = _node_version(node)
+    return (
+        _result_needs_install(node)
+        or _result_needs_install(results["npm"])
+        or installed_node_version is None
+        or installed_node_version < MINIMUM_NODE_VERSION
+    )
+
+
+def _prepend_path(directory: Path) -> None:
+    directory_text = os.fspath(directory)
+    current_entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+    retained_entries = [entry for entry in current_entries if entry != directory_text]
+    os.environ["PATH"] = os.pathsep.join((directory_text, *retained_entries))
+
+
+def validate_macos_architecture() -> str:
+    architecture = platform.machine().lower()
+    if architecture == "aarch64":
+        architecture = "arm64"
+    elif architecture == "amd64":
+        architecture = "x86_64"
+    if architecture not in SUPPORTED_MACOS_ARCHITECTURES:
+        raise SetupError(
+            "unsupported_architecture",
+            f"Only Apple Silicon and Intel macOS architectures are supported: {architecture!r}",
+            exit_code=3,
+        )
+    return architecture
+
+
+def find_homebrew() -> str | None:
+    candidates = [shutil.which("brew"), "/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        path = Path(candidate)
+        if path.is_file() and os.access(path, os.X_OK):
+            _prepend_path(path.parent)
+            return os.fspath(path)
+    return None
+
+
+def require_homebrew() -> str:
+    brew = find_homebrew()
+    if brew is None:
+        raise SetupError(
+            "homebrew_missing",
+            "Homebrew is required to install missing macOS prerequisites. Install it from https://brew.sh and rerun.",
+            exit_code=3,
+        )
+    return brew
+
+
+def brew_install(brew: str, formulas: list[str]) -> None:
+    if not formulas:
+        return
+    run_checked(
+        [brew, "install", *formulas],
+        timeout=1800,
+        error_code="homebrew_install_failed",
+    )
+
+
+def browser_status(
+    home: Path | None = None,
+    *,
+    system_name: str | None = None,
+    application_roots: tuple[Path, ...] | None = None,
+) -> dict[str, Any]:
+    selected_home = (home or Path.home()).expanduser().resolve(strict=False)
+    system = system_name or platform.system()
+    commands = [name for name in CHROME_COMMANDS if shutil.which(name)]
+    applications: list[str] = []
+    if system == "Darwin":
+        roots = application_roots or (Path("/Applications"), selected_home / "Applications")
+        for root in roots:
+            for relative in MACOS_BROWSER_APPLICATIONS:
+                candidate = root / relative
+                if candidate.is_file():
+                    applications.append(os.fspath(candidate))
+    browser_url = bool(os.environ.get("CHROME_DEVTOOLS_AXI_BROWSER_URL"))
+    return {
+        "commands": commands,
+        "applications": applications,
+        "browser_url_configured": browser_url,
+        "available": bool(commands or applications or browser_url),
+    }
+
+
+def nvm_directory(home: Path) -> Path:
     home = require_safe_home(home)
     configured = os.environ.get("NVM_DIR")
-    nvm_directory = Path(configured).expanduser() if configured else home / ".nvm"
-    nvm_directory = nvm_directory.resolve(strict=False)
-    if not path_is_within(nvm_directory, home):
-        raise SetupError("unsafe_nvm_directory", f"NVM_DIR must be below the selected home: {nvm_directory}", exit_code=3)
-    nvm_script = nvm_directory / "nvm.sh"
+    directory = Path(configured).expanduser() if configured else home / ".nvm"
+    directory = directory.resolve(strict=False)
+    if not path_is_within(directory, home):
+        raise SetupError(
+            "unsafe_nvm_directory",
+            f"NVM_DIR must be below the selected home: {directory}",
+            exit_code=3,
+        )
+    return directory
+
+
+def install_supported_node_with_nvm(home: Path, reporter: Reporter) -> None:
+    directory = nvm_directory(home)
+    nvm_script = directory / "nvm.sh"
     if not nvm_script.is_file():
         raise SetupError(
             "nvm_missing",
@@ -375,14 +488,14 @@ def install_supported_node_with_nvm(home: Path, reporter: Reporter) -> None:
     )
     candidates = [Path(line.strip()) for line in completed.stdout.splitlines() if line.strip().startswith("/")]
     node = candidates[-1] if candidates else Path()
-    if not node.is_file() or node.name != "node" or not path_is_within(node, nvm_directory):
+    if not node.is_file() or node.name != "node" or not path_is_within(node, directory):
         raise SetupError(
             "node_install_invalid",
             f"NVM did not return a safe Node {NVM_NODE_SELECTOR} executable.",
             exit_code=3,
         )
     node_bin = os.fspath(node.parent)
-    versions_root = (nvm_directory / "versions/node").resolve(strict=False)
+    versions_root = (directory / "versions/node").resolve(strict=False)
     current_entries = os.environ.get("PATH", "").split(os.pathsep)
     retained_entries = [
         entry
@@ -395,31 +508,24 @@ def install_supported_node_with_nvm(home: Path, reporter: Reporter) -> None:
     reporter.emit("OK", "node_installed", f"Activated Node {NVM_NODE_SELECTOR} from {node_bin}.")
 
 
-def install_wsl_prerequisites(
+def install_linux_prerequisites(
     home: Path,
     results: dict[str, dict[str, Any]],
     reporter: Reporter,
 ) -> None:
     if os.name != "posix" or platform.system() != "Linux":
-        raise SetupError("unsupported_platform", "Automatic prerequisite installation supports WSL2/Linux only.")
+        raise SetupError("unsupported_platform", "Linux prerequisite installation must run on Linux.")
+    home = require_safe_home(home)
     system_packages: list[str] = []
     for command, package in (("git", "git"), ("tmux", "tmux")):
         if _result_needs_install(results[command]):
             system_packages.append(package)
-    node = results["node"]
-    npm = results["npm"]
-    installed_node_version = _node_version(node)
-    install_node = (
-        _result_needs_install(node)
-        or _result_needs_install(npm)
-        or installed_node_version is None
-        or installed_node_version < MINIMUM_NODE_VERSION
-    )
+    install_node = _node_needs_install(results)
     install_gh = _result_needs_install(results["gh"])
     install_glab = _result_needs_install(results["glab"])
     needs_apt = bool(system_packages)
     if not install_node and not needs_apt and not install_gh and not install_glab:
-        reporter.emit("OK", "system_prerequisites", "WSL2 system prerequisites are already installed.")
+        reporter.emit("OK", "system_prerequisites", "Linux system prerequisites are already installed.")
         return
 
     sudo = authorize_sudo() if needs_apt else None
@@ -435,4 +541,65 @@ def install_wsl_prerequisites(
             install_release_package_user("gh", architecture, home, reporter)
         if install_glab:
             install_release_package_user("glab", architecture, home, reporter)
-    reporter.emit("OK", "system_prerequisites", "WSL2 system prerequisites are ready.")
+    reporter.emit("OK", "system_prerequisites", "Linux system prerequisites are ready.")
+
+
+def install_macos_prerequisites(
+    home: Path,
+    results: dict[str, dict[str, Any]],
+    reporter: Reporter,
+) -> None:
+    if os.name != "posix" or platform.system() != "Darwin":
+        raise SetupError("unsupported_platform", "macOS prerequisite installation must run on macOS.")
+    home = require_safe_home(home)
+    validate_macos_architecture()
+    install_node = _node_needs_install(results)
+    nvm_script = nvm_directory(home) / "nvm.sh"
+    use_nvm = install_node and nvm_script.is_file()
+    formulas = [
+        formula
+        for command, formula in (("git", "git"), ("tmux", "tmux"), ("gh", "gh"), ("glab", "glab"))
+        if _result_needs_install(results[command])
+    ]
+    if install_node and not use_nvm:
+        formulas.append("node")
+    formulas = list(dict.fromkeys(formulas))
+    if not install_node and not formulas:
+        reporter.emit("OK", "system_prerequisites", "macOS system prerequisites are already installed.")
+        return
+
+    brew = require_homebrew() if formulas else None
+    if use_nvm:
+        install_supported_node_with_nvm(home, reporter)
+    if brew is not None:
+        brew_install(brew, formulas)
+        reporter.emit("OK", "homebrew_packages_installed", f"Installed with Homebrew: {', '.join(formulas)}.")
+    reporter.emit("OK", "system_prerequisites", "macOS system prerequisites are ready.")
+
+
+def install_wsl_prerequisites(
+    home: Path,
+    results: dict[str, dict[str, Any]],
+    reporter: Reporter,
+) -> None:
+    """Backward-compatible name for the Linux installer."""
+
+    install_linux_prerequisites(home, results, reporter)
+
+
+def install_system_prerequisites(
+    home: Path,
+    results: dict[str, dict[str, Any]],
+    reporter: Reporter,
+) -> None:
+    system = platform.system()
+    if system == "Linux":
+        install_linux_prerequisites(home, results, reporter)
+        return
+    if system == "Darwin":
+        install_macos_prerequisites(home, results, reporter)
+        return
+    raise SetupError(
+        "unsupported_platform",
+        f"Automatic prerequisite installation supports macOS and Linux, not {system or 'this platform'}.",
+    )

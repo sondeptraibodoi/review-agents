@@ -1,17 +1,19 @@
 ---
 name: python-tools
-description: Apply TuLN's Python runtime and dependency policy before using Python or changing Python dependencies on Windows, WSL2, or Linux.
+description: Apply TuLN's Python runtime and dependency policy before using Python or changing Python dependencies on macOS, Windows, WSL2, or Linux.
 ---
 
 # Global Python Policy
 
 Determine the active operating system, shell, project environment, and interpreter before running Python or managing dependencies.
 
-## WSL2 and Linux
+## macOS, WSL2, and Linux
 
 Use an existing project environment when the project defines one.
 
-For the setup utility in this repository, use the WSL2 `python3` interpreter and Python standard library only.
+For the setup utility in this repository, use a native `python3` interpreter version 3.10 or newer and the Python standard library only.
+
+On macOS, use the existing project environment when available, or a Homebrew Python when the system interpreter is too old.
 
 Do not call a Windows Python interpreter through `/mnt/c`, `/mnt/u`, or another mounted Windows drive for a WSL2 workflow.
 

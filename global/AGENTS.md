@@ -21,7 +21,7 @@ These are common instructions for TuLN's agents across all scenarios.
 ## Resource-safe builds
 
 - Finish coding and relevant tests or E2E before running the production build; do not rebuild after every small edit.
-- On an 8 GB WSL2 environment, `nx run-many` is allowed, but run one build task at a time with `--parallel=1` and limit Node.js with `NODE_OPTIONS=--max-old-space-size=4096`.
+- On an 8 GB development environment, including WSL2 or macOS, `nx run-many` is allowed, but run one build task at a time with `--parallel=1` and limit Node.js with `NODE_OPTIONS=--max-old-space-size=4096`.
 
 ## TuLN's Opinions
 

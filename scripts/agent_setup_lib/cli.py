@@ -42,7 +42,7 @@ from .public_tools import run_public_tools
 
 def add_common_arguments(parser: argparse.ArgumentParser, *, apply_option: bool = False) -> None:
     parser.add_argument("--agents", required=True, help="Comma-separated agents: codex, claude, gemini, agy")
-    parser.add_argument("--home", help="Target Linux home. Defaults to the current user's home.")
+    parser.add_argument("--home", help="Target user home. Defaults to the current user's home.")
     parser.add_argument("--state-dir", help=argparse.SUPPRESS)
     parser.add_argument("--repo-root", help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true", help="Emit structured JSON output.")
@@ -60,7 +60,7 @@ def add_auth_env_argument(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Set up public tools, shared instructions, and skills on WSL2/Linux."
+        description="Set up public tools, shared instructions, and skills on macOS/Linux."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -74,11 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     tools_mode.add_argument(
         "--install",
         action="store_true",
-        help="Install missing WSL2 prerequisites, then Firstmate and the public toolchain.",
+        help="Install missing native prerequisites, then Firstmate and the public toolchain.",
     )
     tools_parser.add_argument("--firstmate-dir", help="Firstmate checkout. Defaults to ~/agent-tools/firstmate.")
     tools_parser.add_argument("--skip-gnhf", action="store_true", help="Do not install the separate gnhf package.")
-    tools_parser.add_argument("--home", help="Target Linux home. Defaults to the current user's home.")
+    tools_parser.add_argument("--home", help="Target user home. Defaults to the current user's home.")
     tools_parser.add_argument("--state-dir", help=argparse.SUPPRESS)
     tools_parser.add_argument("--repo-root", help=argparse.SUPPRESS)
     tools_parser.add_argument("--json", action="store_true", help="Emit structured JSON output.")
@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_parser.add_argument("--model", default="gpt-5.6-sol")
     project_parser.add_argument("--effort", choices=REASONING_EFFORTS)
     project_parser.add_argument("--timeout", type=int, default=900, help="Generator timeout in seconds.")
-    project_parser.add_argument("--home", help="Target Linux home. Defaults to the current user's home.")
+    project_parser.add_argument("--home", help="Target user home. Defaults to the current user's home.")
     project_parser.add_argument("--state-dir", help=argparse.SUPPRESS)
     project_parser.add_argument("--repo-root", help=argparse.SUPPRESS)
     project_parser.add_argument("--json", action="store_true")

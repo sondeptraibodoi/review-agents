@@ -26,6 +26,7 @@ from .common import (
     validate_sources,
 )
 from .repositories import canonical_remote, git_value
+from .system_tools import browser_status
 
 
 VERSION_COMMAND_TIMEOUT_SECONDS = 5
@@ -161,16 +162,27 @@ def command_gitlab_token_status(
     }
 
 
-def wsl_status() -> dict[str, Any]:
+def platform_status() -> dict[str, Any]:
     release = platform.release()
-    is_linux = os.name == "posix" and platform.system() == "Linux"
+    system = platform.system()
+    is_linux = os.name == "posix" and system == "Linux"
+    is_macos = os.name == "posix" and system == "Darwin"
     is_wsl = is_linux and ("microsoft" in release.lower() or "WSL_DISTRO_NAME" in os.environ)
     return {
         "platform": platform.platform(),
         "python": platform.python_version(),
+        "system": system,
+        "supported": is_linux or is_macos,
         "is_linux": is_linux,
+        "is_macos": is_macos,
         "is_wsl": is_wsl,
     }
+
+
+def wsl_status() -> dict[str, Any]:
+    """Backward-compatible alias for the former Linux-only status function."""
+
+    return platform_status()
 
 
 def inspect_firstmate_checkout(path: Path) -> dict[str, Any]:
@@ -256,7 +268,7 @@ def doctor(
     auth_environment: AuthEnvironment | None = None,
 ) -> bool:
     healthy = True
-    reporter.data["environment"] = wsl_status()
+    reporter.data["environment"] = platform_status()
     reporter.emit("OK", "environment", f"Python {platform.python_version()} on {platform.platform()}")
     try:
         metadata = validate_sources(repository_root)
@@ -400,11 +412,8 @@ def doctor(
         "path": os.fspath(skill_creator),
         "status": "present" if skill_creator.is_file() else "missing",
     }
-    chrome_commands = [name for name in ("google-chrome", "chromium", "chromium-browser") if shutil.which(name)]
-    reporter.data["chrome"] = {
-        "commands": chrome_commands,
-        "browser_url_configured": bool(os.environ.get("CHROME_DEVTOOLS_AXI_BROWSER_URL")),
-        "status": "available" if chrome_commands or os.environ.get("CHROME_DEVTOOLS_AXI_BROWSER_URL") else "not-configured",
-    }
+    browser = browser_status(home)
+    browser["status"] = "available" if browser["available"] else "not-configured"
+    reporter.data["chrome"] = browser
     reporter.emit("OK", "doctor_complete", "Doctor completed without changing the filesystem.")
     return healthy

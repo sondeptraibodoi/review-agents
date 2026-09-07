@@ -5,9 +5,11 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime as dt
+import errno
 import hashlib
 import json
 import os
+import platform
 import re
 import stat
 import uuid
@@ -20,7 +22,7 @@ except ImportError:  # pragma: no cover - unavailable on the supported target on
     fcntl = None
 
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 STATE_SCHEMA_VERSION = 1
 OUTPUT_SCHEMA_VERSION = 1
 SUPPORTED_AGENTS = ("codex", "claude", "gemini", "agy")
@@ -227,15 +229,16 @@ def require_safe_home(home: Path) -> Path:
 
 
 def require_mutation_environment(*, allow_root: bool) -> None:
-    if os.name != "posix":
+    system = platform.system()
+    if os.name != "posix" or system not in {"Darwin", "Linux"}:
         raise SetupError(
             "unsupported_platform",
-            "Mutating commands must run inside WSL2 or Linux with python3.",
+            "Mutating commands require macOS or Linux with python3.",
         )
     if hasattr(os, "geteuid") and os.geteuid() == 0 and not allow_root:
         raise SetupError(
             "root_refused",
-            "Refusing to mutate a root profile. Run as the intended WSL2 user or pass --allow-root explicitly.",
+            "Refusing to mutate a root profile. Run as the intended user or pass --allow-root explicitly.",
         )
 
 
@@ -558,7 +561,7 @@ class StateStore:
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
         if fcntl is None:
-            raise SetupError("locking_unavailable", "fcntl locking is required on WSL2/Linux.")
+            raise SetupError("locking_unavailable", "fcntl locking is required on macOS/Linux.")
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.directory, 0o700)
         descriptor = os.open(self.lock_file, os.O_RDWR | os.O_CREAT, 0o600)
@@ -622,6 +625,11 @@ def fsync_directory(path: Path) -> None:
     except OSError:
         return
     try:
-        os.fsync(descriptor)
+        try:
+            os.fsync(descriptor)
+        except OSError as error:
+            unsupported_errors = {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}
+            if platform.system() != "Darwin" or error.errno not in unsupported_errors:
+                raise
     finally:
         os.close(descriptor)
